@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WhistleCode Benchmark Test Site</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #38bdf8;
+      --primary-hover: #0284c7;
+      --danger: #ef4444;
+      --success: #22c55e;
+      --warning: #f59e0b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: var(--bg); color: var(--text); padding: 24px; min-height: 100vh; }
+    header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 24px; }
+    h1 { font-size: 20px; font-weight: 700; color: #38bdf8; }
+    .badge { background: #0369a1; color: white; padding: 4px 10px; border-radius: 9999px; font-size: 12px; font-weight: 600; }
+    .nav-tabs { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+    .nav-tab { background: var(--card-bg); border: 1px solid var(--border); color: var(--text-muted); padding: 8px 16px; border-radius: 6px; cursor: pointer; text-decoration: none; font-size: 14px; font-weight: 500; }
+    .nav-tab.active { background: #38bdf8; color: #0f172a; font-weight: 600; border-color: #38bdf8; }
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 24px; margin-bottom: 24px; max-width: 760px; }
+    .card h2 { font-size: 18px; margin-bottom: 12px; }
+    .card p { color: var(--text-muted); font-size: 14px; margin-bottom: 20px; }
+    .form-group { margin-bottom: 16px; }
+    label { display: block; font-size: 13px; font-weight: 500; color: #cbd5e1; margin-bottom: 6px; }
+    input[type="text"], input[type="email"], select, textarea {
+      width: 100%; padding: 10px 12px; background: #0f172a; border: 1px solid var(--border); border-radius: 6px; color: white; font-size: 14px; outline: none;
+    }
+    input:focus, select:focus, textarea:focus { border-color: var(--primary); }
+    .btn { background: var(--primary); color: #0f172a; border: none; padding: 10px 20px; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 14px; }
+    .btn:hover { background: var(--primary-hover); }
+    .btn-secondary { background: #334155; color: white; margin-left: 8px; }
+    .table-container { margin-top: 20px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }
+    th { background: #0f172a; padding: 10px 16px; font-weight: 600; color: var(--text-muted); border-bottom: 1px solid var(--border); }
+    td { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+    .alert-success { background: rgba(34, 197, 94, 0.15); border: 1px solid var(--success); color: #4ade80; padding: 12px; border-radius: 6px; margin-bottom: 16px; display: none; }
+    .rating-badge { background: #064e3b; color: #34d399; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+    .price-badge { background: #312e81; color: #a5b4fc; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>WhistleCode Isolated Test Site</h1>
+      <small style="color: #64748b;">Deterministic sandbox for task demonstrations & automated verification</small>
+    </div>
+    <span class="badge">Isolated Test Scope</span>
+  </header>
+
+  <nav class="nav-tabs">
+    <button class="nav-tab active" onclick="switchTab('customers')" id="tab-btn-customers" data-testid="tab-customers">Task 1: Customers</button>
+    <button class="nav-tab" onclick="switchTab('catalog')" id="tab-btn-catalog" data-testid="tab-catalog">Task 2: Catalog</button>
+    <button class="nav-tab" onclick="switchTab('tickets')" id="tab-btn-tickets" data-testid="tab-tickets">Task 3: Support Tickets</button>
+    <button class="nav-tab" onclick="switchTab('restaurants')" id="tab-btn-restaurants" data-testid="tab-restaurants">Task 4: Restaurant Finder (SUGILITE)</button>
+  </nav>
+
+  <!-- TASK 1: NEW CUSTOMER FORM -->
+  <section id="panel-customers" class="card">
+    <h2>Task 1: Submit New Customer</h2>
+    <p>Register a new client profile with variable contact information.</p>
+    
+    <div id="customer-success" class="alert-success" data-testid="customer-success-msg">
+      ✓ Customer successfully added! Record created.
+    </div>
+
+    <form id="customer-form" onsubmit="handleCustomerSubmit(event)">
+      <div class="form-group">
+        <label for="cust-name">Customer Full Name</label>
+        <input type="text" id="cust-name" name="name" data-testid="customer-name-input" placeholder="e.g. Jane Doe" required>
+      </div>
+      <div class="form-group">
+        <label for="cust-email">Email Address</label>
+        <input type="email" id="cust-email" name="email" data-testid="customer-email-input" placeholder="jane@example.com" required>
+      </div>
+      <div class="form-group">
+        <label for="cust-plan">Subscription Plan</label>
+        <select id="cust-plan" name="plan" data-testid="customer-plan-select">
+          <option value="Starter">Starter Plan</option>
+          <option value="Professional">Professional Plan</option>
+          <option value="Enterprise">Enterprise Plan</option>
+        </select>
+      </div>
+      <button type="submit" class="btn" id="btn-save-customer" data-testid="btn-save-customer">Save Customer</button>
+    </form>
+
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Plan</th>
+          </tr>
+        </thead>
+        <tbody id="customer-list" data-testid="customer-list">
+          <tr>
+            <td>Alice Smith</td>
+            <td>alice@example.com</td>
+            <td>Enterprise</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- TASK 2: CATALOG SEARCH & COPY -->
+  <section id="panel-catalog" class="card" style="display: none;">
+    <h2>Task 2: Search Catalog & Copy Code</h2>
+    <p>Search item catalog, view details, and transfer SKU code.</p>
+    
+    <div class="form-group" style="display: flex; gap: 8px;">
+      <input type="text" id="catalog-search-input" data-testid="catalog-search-input" placeholder="Search SKU or name (e.g. Server, Sensor)">
+      <button type="button" class="btn" id="btn-search-catalog" data-testid="btn-search-catalog" onclick="filterCatalog()">Search</button>
+    </div>
+
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>SKU</th>
+            <th>Item Name</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="catalog-items" data-testid="catalog-items">
+          <tr data-sku="SKU-8821">
+            <td class="sku-cell">SKU-8821</td>
+            <td>Industrial Temperature Sensor</td>
+            <td><button class="btn btn-secondary" onclick="copySku('SKU-8821')" data-testid="btn-select-sku-8821">Select SKU</button></td>
+          </tr>
+          <tr data-sku="SKU-9904">
+            <td class="sku-cell">SKU-9904</td>
+            <td>Edge Gateway Router</td>
+            <td><button class="btn btn-secondary" onclick="copySku('SKU-9904')" data-testid="btn-select-sku-9904">Select SKU</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div style="margin-top: 24px; border-top: 1px solid var(--border); padding-top: 16px;">
+      <h3>Destination Form (SKU Verification)</h3>
+      <div class="form-group" style="margin-top: 12px;">
+        <label for="dest-sku-input">Selected SKU Value</label>
+        <input type="text" id="dest-sku-input" data-testid="dest-sku-input" readonly placeholder="Waiting for SKU selection...">
+      </div>
+    </div>
+  </section>
+
+  <!-- TASK 3: CREATE SUPPORT TICKET (CONSEQUENTIAL ACTION) -->
+  <section id="panel-tickets" class="card" style="display: none;">
+    <h2>Task 3: Create Support Ticket</h2>
+    <p>Consequential action: Creating a support ticket requires explicit confirmation gate before submission.</p>
+
+    <div id="ticket-success" class="alert-success" data-testid="ticket-success-msg">
+      ✓ Support ticket submitted successfully!
+    </div>
+
+    <form id="ticket-form" onsubmit="handleTicketSubmit(event)">
+      <div class="form-group">
+        <label for="ticket-subject">Ticket Subject</label>
+        <input type="text" id="ticket-subject" name="subject" data-testid="ticket-subject-input" placeholder="e.g. Database connection timeout" required>
+      </div>
+      <div class="form-group">
+        <label for="ticket-desc">Description</label>
+        <textarea id="ticket-desc" name="description" rows="3" data-testid="ticket-description-input" placeholder="Detailed error log or symptoms..." required></textarea>
+      </div>
+      <div class="form-group">
+        <label for="ticket-priority">Priority</label>
+        <select id="ticket-priority" name="priority" data-testid="ticket-priority-select">
+          <option value="Low">Low</option>
+          <option value="Medium" selected>Medium</option>
+          <option value="High">High (Urgent)</option>
+        </select>
+      </div>
+      <button type="submit" class="btn" id="btn-create-ticket" data-testid="create-ticket-btn">Create ticket</button>
+    </form>
+
+    <div style="margin-top: 24px;">
+      <h3>Active Support Tickets</h3>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Subject</th>
+              <th>Priority</th>
+            </tr>
+          </thead>
+          <tbody id="ticket-list" data-testid="ticket-list">
+            <tr>
+              <td>TCK-101</td>
+              <td>Initial onboarding assistance</td>
+              <td>Low</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- TASK 4: RESTAURANT FINDER (SUGILITE BENCHMARK) -->
+  <section id="panel-restaurants" class="card" style="display: none;">
+    <h2>Task 4: Restaurant Finder (SUGILITE Demonstration Benchmark)</h2>
+    <p>Demonstrate selecting a restaurant. WhistleCode will initiate clarification dialogue: <em>"Did you choose this restaurant because of price, distance or rating?"</em></p>
+
+    <div id="restaurant-success" class="alert-success" data-testid="restaurant-success-msg">
+      ✓ Restaurant selected & booked: <strong id="booked-restaurant-name"></strong>
+    </div>
+
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Restaurant</th>
+            <th>Price</th>
+            <th>Distance</th>
+            <th>Rating</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="restaurant-table-body">
+          <tr id="row-bistro-roma">
+            <td><strong>Bistro Roma</strong><br><small style="color: #94a3b8;">Authentic Italian Pastas</small></td>
+            <td><span class="price-badge">$$</span></td>
+            <td>0.5 mi</td>
+            <td><span class="rating-badge">★ 4.8</span></td>
+            <td><button class="btn btn-secondary" onclick="selectRestaurant('Bistro Roma', '$$', 0.5, 4.8)" data-testid="btn-select-bistro-roma">Select Restaurant</button></td>
+          </tr>
+          <tr id="row-quick-bites">
+            <td><strong>Quick Bites</strong><br><small style="color: #94a3b8;">Fast Casual Sandwiches</small></td>
+            <td><span class="price-badge">$</span></td>
+            <td>0.2 mi</td>
+            <td><span class="rating-badge">★ 3.9</span></td>
+            <td><button class="btn btn-secondary" onclick="selectRestaurant('Quick Bites', '$', 0.2, 3.9)" data-testid="btn-select-quick-bites">Select Restaurant</button></td>
+          </tr>
+          <tr id="row-grand-trattoria">
+            <td><strong>Grand Trattoria</strong><br><small style="color: #94a3b8;">Fine Dining Mediterranean</small></td>
+            <td><span class="price-badge">$$$</span></td>
+            <td>1.2 mi</td>
+            <td><span class="rating-badge">★ 4.9</span></td>
+            <td><button class="btn btn-secondary" onclick="selectRestaurant('Grand Trattoria', '$$$', 1.2, 4.9)" data-testid="btn-select-grand-trattoria">Select Restaurant</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div style="margin-top: 24px; border-top: 1px solid var(--border); padding-top: 16px;">
+      <div class="form-group">
+        <label for="chosen-restaurant-input">Active Selection</label>
+        <input type="text" id="chosen-restaurant-input" data-testid="chosen-restaurant-input" readonly placeholder="Waiting for selection...">
+      </div>
+    </div>
+  </section>
+
+  <script>
+    function switchTab(tab) {
+      document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.card').forEach(c => c.style.display = 'none');
+      
+      const btn = document.getElementById('tab-btn-' + tab);
+      const panel = document.getElementById('panel-' + tab);
+      if (btn) btn.classList.add('active');
+      if (panel) panel.style.display = 'block';
+      window.location.hash = '#' + tab;
+    }
+
+    function handleCustomerSubmit(e) {
+      e.preventDefault();
+      const name = document.getElementById('cust-name').value;
+      const email = document.getElementById('cust-email').value;
+      const plan = document.getElementById('cust-plan').value;
+
+      const tbody = document.getElementById('customer-list');
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${name}</td><td>${email}</td><td>${plan}</td>`;
+      tbody.appendChild(tr);
+
+      const alert = document.getElementById('customer-success');
+      alert.style.display = 'block';
+      setTimeout(() => alert.style.display = 'none', 4000);
+
+      document.getElementById('customer-form').reset();
+    }
+
+    function filterCatalog() {
+      const q = document.getElementById('catalog-search-input').value.toLowerCase();
+      const rows = document.querySelectorAll('#catalog-items tr');
+      rows.forEach(row => {
+        const text = row.innerText.toLowerCase();
+        row.style.display = text.includes(q) ? '' : 'none';
+      });
+    }
+
+    function copySku(sku) {
+      document.getElementById('dest-sku-input').value = sku;
+    }
+
+    let ticketCounter = 102;
+    function handleTicketSubmit(e) {
+      e.preventDefault();
+      const subject = document.getElementById('ticket-subject').value;
+      const priority = document.getElementById('ticket-priority').value;
+
+      const tbody = document.getElementById('ticket-list');
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>TCK-${ticketCounter++}</td><td>${subject}</td><td>${priority}</td>`;
+      tbody.appendChild(tr);
+
+      const alert = document.getElementById('ticket-success');
+      alert.style.display = 'block';
+      setTimeout(() => alert.style.display = 'none', 4000);
+
+      document.getElementById('ticket-form').reset();
+    }
+
+    function selectRestaurant(name, price, dist, rating) {
+      document.getElementById('chosen-restaurant-input').value = `${name} (${price}, ${dist}mi, ★${rating})`;
+      const success = document.getElementById('restaurant-success');
+      document.getElementById('booked-restaurant-name').innerText = `${name} [Price: ${price}, Distance: ${dist}mi, Rating: ★${rating}]`;
+      success.style.display = 'block';
+      setTimeout(() => success.style.display = 'none', 5000);
+    }
+
+    // Auto-switch tab based on hash
+    if (window.location.hash) {
+      const tab = window.location.hash.replace('#', '');
+      if (document.getElementById('panel-' + tab)) {
+        switchTab(tab);
+      }
+    }
+  </script>
+</body>
+</html>

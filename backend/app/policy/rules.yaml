@@ -1,0 +1,78 @@
+policy_version: "0.1.0"
+default_decision: "DENY"
+
+# Configured origins allowed for automation
+allowed_origins:
+  - "http://localhost:8000"
+  - "http://127.0.0.1:8000"
+  - "https://testsite.local"
+
+# Action policies
+actions:
+  navigate:
+    risk: "low"
+    decision: "ALLOW"
+    deny_if_field_sensitivity: []
+
+  click:
+    risk: "low"
+    decision: "ALLOW"
+    deny_if_field_sensitivity: []
+
+  type:
+    risk: "medium"
+    decision: "ALLOW"
+    deny_if_field_sensitivity:
+      - "password"
+      - "payment"
+      - "credit_card"
+      - "creditcard"
+      - "card_number"
+      - "cvv"
+      - "ssn"
+      - "secret"
+
+  select:
+    risk: "medium"
+    decision: "ALLOW"
+    deny_if_field_sensitivity: []
+
+  check:
+    risk: "medium"
+    decision: "ALLOW"
+    deny_if_field_sensitivity: []
+
+  uncheck:
+    risk: "medium"
+    decision: "ALLOW"
+    deny_if_field_sensitivity: []
+
+  wait_for:
+    risk: "low"
+    decision: "ALLOW"
+    deny_if_field_sensitivity: []
+
+  assert:
+    risk: "low"
+    decision: "ALLOW"
+    deny_if_field_sensitivity: []
+
+  extract:
+    risk: "medium"
+    decision: "ALLOW"
+    deny_if_field_sensitivity: []
+
+  submit:
+    risk: "high"
+    decision: "REQUIRE_CONFIRMATION"
+    deny_if_field_sensitivity: []
+
+  confirm_gate:
+    risk: "high"
+    decision: "REQUIRE_CONFIRMATION"
+    deny_if_field_sensitivity: []
+
+limits:
+  max_actions_per_run: 200
+  max_run_seconds: 600
+  max_repeat_nonidempotent: 1
