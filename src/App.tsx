@@ -45,6 +45,11 @@ export function App() {
     setActiveApproval(null);
   };
 
+  const handleWorkflowDraftUpdated = (wf: WorkflowDefinition) => {
+    setCurrentWorkflow(wf);
+    setActiveApproval(null);
+  };
+
   const handleNavigate = (sec: AppSection) => {
     setActiveSection(sec);
   };
@@ -74,6 +79,7 @@ export function App() {
             onAskGoal={(goal) => { setInitialGoal(goal); setActiveSection("Ask AI"); }}
             onSelectWorkflow={(wf) => {
               setCurrentWorkflow(wf);
+              setActiveApproval(null);
               setActiveSection("My Workflows");
             }}
           />
@@ -132,6 +138,7 @@ export function App() {
           <AskAIView
             onNavigate={handleNavigate}
             onWorkflowGenerated={handleWorkflowGenerated}
+            onWorkflowUpdated={handleWorkflowDraftUpdated}
             initialPrompt={initialGoal}
             activeWorkflow={currentWorkflow.steps.length ? currentWorkflow : undefined}
             activeApproval={activeApproval}

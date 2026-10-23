@@ -518,7 +518,7 @@ class ReviseWorkflowRequest(BaseModel):
 async def revise_workflow(req: ReviseWorkflowRequest):
     if not req.instruction.strip():
         raise HTTPException(status_code=422, detail="Describe the change you want to make.")
-    if req.workflow.content_hash != req.workflow.compute_hash():
+    if req.workflow.content_hash and req.workflow.content_hash != req.workflow.compute_hash():
         raise HTTPException(status_code=409, detail="This workflow draft has changed. Reload it before requesting an AI revision.")
     try:
         proposal = await ollama_provider.revise_workflow(req.workflow, req.instruction)
@@ -540,8 +540,12 @@ async def revise_workflow(req: ReviseWorkflowRequest):
         workflow.version = 1
         workflow.parent_version = None
     elif req.workflow.version == latest["version"]:
-        if req.workflow.content_hash != latest["content_hash"]:
+        if req.workflow.content_hash and req.workflow.content_hash != latest["content_hash"]:
             raise HTTPException(status_code=409, detail="The saved workflow changed. Reload its latest version before revising it.")
+        # A revision is a new unsaved proposal. Keep the persisted version intact and
+        # bind the AI's output to the latest saved parent version.
+        workflow.version = latest["version"] + 1
+        workflow.parent_version = latest["version"]
     elif req.workflow.version == latest["version"] + 1 and req.workflow.parent_version == latest["version"]:
         # Keep editing an unsaved version without creating a gap in the version history.
         workflow.version = req.workflow.version

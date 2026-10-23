@@ -14,6 +14,13 @@ const runStateLabel: Record<string, string> = {
   PENDING_CONFIRMATION: "Waiting for your review", EXECUTING_STEP: "Running", PRECHECK: "Checking plan",
 };
 
+const explainRunError = (message: string) => {
+  if (!message.includes("Element target could not be resolved by any strategy")) return message;
+  const capturedName = message.match(/'name':\s*'([^']*)'/)?.[1]?.replace(/\s+/g, " ").trim();
+  const target = capturedName ? `“${capturedName}”` : "the recorded control";
+  return `Couldn’t find ${target} on the current page. The page may have changed, or its search results may still be loading. Review the target in the workflow and try again.`;
+};
+
 export const RunMonitor: React.FC<Props> = ({
   workflow,
   approval,
@@ -267,12 +274,12 @@ export const RunMonitor: React.FC<Props> = ({
 
           {currentRun.safe_stop_reason && (
             <div className="warning-banner">
-              ⚠️ Workflow paused: {currentRun.safe_stop_reason.replaceAll("APPROVAL_EXPIRED", "approval expired").replaceAll("APPROVAL_HASH_MISMATCH", "plan changed").replaceAll("APPROVAL_NOT_FOUND", "approval is missing").replaceAll("APPROVAL_SCOPE_MISMATCH", "approval no longer matches this plan").replaceAll("APPROVAL_REVOKED", "approval was revoked")}
+              ⚠️ Workflow paused: {explainRunError(currentRun.safe_stop_reason).replaceAll("APPROVAL_EXPIRED", "approval expired").replaceAll("APPROVAL_HASH_MISMATCH", "plan changed").replaceAll("APPROVAL_NOT_FOUND", "approval is missing").replaceAll("APPROVAL_SCOPE_MISMATCH", "approval no longer matches this plan").replaceAll("APPROVAL_REVOKED", "approval was revoked")}
             </div>
           )}
 
           <div className="step-execution-feed">
-            <h4>Completed steps ({currentRun.step_results.length})</h4>
+            <h4>Workflow steps ({currentRun.step_results.length})</h4>
             <div className="step-results-list">
               {currentRun.step_results.map((sr, idx) => (
                 <div key={idx} className={`step-result-card ${sr.passed ? "passed" : "failed"}`}>
@@ -283,9 +290,10 @@ export const RunMonitor: React.FC<Props> = ({
                     <span className={`badge-policy badge-policy-${sr.decision.toLowerCase()}`}>
                       {sr.decision === "ALLOW" ? "Allowed" : sr.decision === "REQUIRE_CONFIRMATION" ? "Review needed" : "Blocked"}
                     </span>
+                    <span className={`step-result-state ${sr.passed ? "is-complete" : "is-failed"}`}>{sr.passed ? "Completed" : "Failed"}</span>
                   </div>
                   {sr.error_message && (
-                    <div className="step-error-text">❌ {sr.error_message}</div>
+                    <div className="step-error-text">❌ {explainRunError(sr.error_message)}{sr.error_message.includes("Element target could not be resolved by any strategy") && <details><summary>Captured target details</summary><code>{sr.error_message}</code></details>}</div>
                   )}
                 </div>
               ))}

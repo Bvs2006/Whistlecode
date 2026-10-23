@@ -12,6 +12,12 @@ type Props = {
 };
 
 const decisionLabel = (decision?: string) => decision === "ALLOW" ? "Allowed" : decision === "REQUIRE_CONFIRMATION" ? "Needs your confirmation" : decision === "DENY" ? "Blocked" : "Checking…";
+const approvalMatchesPlan = (record: ApprovalRecord | null, workflow: WorkflowDefinition) => Boolean(record
+  && record.workflow_id === workflow.workflow_id
+  && record.version === workflow.version
+  && (!workflow.content_hash || record.version_hash === workflow.content_hash)
+  && !record.revoked_at
+  && Date.parse(record.expires_at) > Date.now());
 
 export const PlanApprovalView: React.FC<Props> = ({
   workflow,
@@ -22,22 +28,21 @@ export const PlanApprovalView: React.FC<Props> = ({
   onApprovalRevoked,
 }) => {
   const [approving, setApproving] = useState(false);
-  const [isApproved, setIsApproved] = useState(!!approval);
   const [expandedStepId, setExpandedStepId] = useState<string | null>("s1");
   const [decisionError, setDecisionError] = useState<string | null>(null);
-  const [currentApproval, setCurrentApproval] = useState(approval);
+  const [currentApproval, setCurrentApproval] = useState(() => approvalMatchesPlan(approval, workflow) ? approval : null);
   const [planPreview, setPlanPreview] = useState<PlanPreviewResponse | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
   useEffect(() => {
-    setCurrentApproval(approval);
-    setIsApproved(!!approval);
-  }, [approval]);
+    setCurrentApproval(approvalMatchesPlan(approval, workflow) ? approval : null);
+  }, [approval, workflow.workflow_id, workflow.version, workflow.content_hash]);
 
   useEffect(() => {
     let active = true;
     setPreviewLoading(true);
     setPlanPreview(null);
+    setDecisionError(null);
     api.previewPlan(workflow).then((preview) => {
       if (active) setPlanPreview(preview as PlanPreviewResponse);
     }).catch((error: Error) => {
@@ -95,11 +100,7 @@ export const PlanApprovalView: React.FC<Props> = ({
       const res = await api.approveWorkflow(workflow, workflow.allowed_origins, 30);
       if (res.approval) {
         setCurrentApproval(res.approval);
-        setIsApproved(true);
         onApprovalCreated(res.approval);
-        setTimeout(() => {
-          onNavigateToLiveRun();
-        }, 600);
       } else {
         setDecisionError("The server did not return an approval record. The plan remains blocked.");
       }
@@ -115,7 +116,6 @@ export const PlanApprovalView: React.FC<Props> = ({
     setDecisionError(null);
     try {
       await api.recordApprovalDecision(workflow, "deny", "User denied the proposed plan");
-      setIsApproved(false);
       if (onNavigate) onNavigate("Overview");
     } catch (e: any) {
       setDecisionError(e.message || "The denial could not be recorded.");
@@ -155,7 +155,6 @@ export const PlanApprovalView: React.FC<Props> = ({
     try {
       await api.revokeApproval(currentApproval.id);
       setCurrentApproval(null);
-      setIsApproved(false);
       onApprovalRevoked?.();
     } catch (e: any) {
       setDecisionError(e.message || "The approval could not be revoked.");
@@ -331,6 +330,7 @@ export const PlanApprovalView: React.FC<Props> = ({
                     {approving ? "Saving approval…" : previewLoading ? "Checking plan…" : "Approve this version →"}
                   </button>
                 )}
+                {currentApproval && <button type="button" className="btn-approve-bold" onClick={onNavigateToLiveRun}>Continue to live run →</button>}
               </div>
             </div>
           </div>

@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from "react";
 import { defaultAIService } from "../../services/aiService";
 import { api } from "../../api/client";
 import { MarkdownMessage } from "../common/MarkdownMessage";
+import { AskAIPreviewPanel } from "./AskAIPreviewPanel";
+import type { AskAIArtifact } from "./AskAIPreviewPanel";
 import type {
   ConversationMessage,
   ConversationPhase,
@@ -15,9 +17,10 @@ type Props = {
   savedWorkflows?: WorkflowDefinition[];
   activeWorkflow?: WorkflowDefinition;
   activeApproval?: ApprovalRecord | null;
+  onWorkflowUpdated?: (workflow: WorkflowDefinition) => void;
 };
 
-type AskAIThread = { id: string; title: string; messages: ConversationMessage[]; updatedAt: number };
+type AskAIThread = { id: string; title: string; messages: ConversationMessage[]; artifacts?: AskAIArtifact[]; activeArtifactId?: string; updatedAt: number };
 type AskAIFile = { id: string; name: string; content: string };
 const THREADS_STORAGE_KEY = "whistlecode.ask-ai.threads.v1";
 
@@ -41,6 +44,7 @@ export const AskAIView: React.FC<Props> = ({
   savedWorkflows = [],
   activeWorkflow,
   activeApproval,
+  onWorkflowUpdated,
 }) => {
   const [inputText, setInputText] = useState(initialPrompt);
   const [phase, setPhase] = useState<ConversationPhase>("idle");
@@ -50,8 +54,16 @@ export const AskAIView: React.FC<Props> = ({
   const [threads, setThreads] = useState<AskAIThread[]>(loadThreads);
   const [activeThreadId, setActiveThreadId] = useState(() => loadThreads()[0]?.id || `chat_${crypto.randomUUID()}`);
   const [attachments, setAttachments] = useState<AskAIFile[]>([]);
+  const [artifacts, setArtifacts] = useState<AskAIArtifact[]>(() => loadThreads()[0]?.artifacts || []);
+  const [activeArtifactId, setActiveArtifactId] = useState(() => loadThreads()[0]?.activeArtifactId || loadThreads()[0]?.artifacts?.[0]?.id || "");
+  const [previewOpen, setPreviewOpen] = useState(() => Boolean(loadThreads()[0]?.artifacts?.length));
+  const [previewExpanded, setPreviewExpanded] = useState(false);
+  const [previewWidth, setPreviewWidth] = useState(470);
+  const [theme, setTheme] = useState<"dark" | "light">(() => localStorage.getItem("whistlecode.ask-ai.theme") === "light" ? "light" : "dark");
+  const [draggingPreview, setDraggingPreview] = useState(false);
   const [testReports, setTestReports] = useState<Record<string, { pending?: boolean; text: string }>>({});
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
 
   // Conversation history state (strictly separated from execution state)
   const [messages, setMessages] = useState<ConversationMessage[]>(() => {
@@ -75,19 +87,109 @@ export const AskAIView: React.FC<Props> = ({
     const timer = window.setTimeout(() => {
       const firstUserText = messages.find((message) => message.sender === "user")?.text || "New conversation";
       const title = firstUserText.split("\n")[0].slice(0, 64) || "New conversation";
-      setThreads((current) => [{ id: activeThreadId, title, messages, updatedAt: Date.now() }, ...current.filter((thread) => thread.id !== activeThreadId)]
+      setThreads((current) => [{ id: activeThreadId, title, messages, artifacts, activeArtifactId, updatedAt: Date.now() }, ...current.filter((thread) => thread.id !== activeThreadId)]
         .sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 30));
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [messages, activeThreadId, phase]);
+  }, [messages, artifacts, activeArtifactId, activeThreadId, phase]);
 
   useEffect(() => {
     try { localStorage.setItem(THREADS_STORAGE_KEY, JSON.stringify(threads)); } catch { /* Storage may be disabled or full. */ }
   }, [threads]);
 
+  useEffect(() => {
+    try { localStorage.setItem("whistlecode.ask-ai.theme", theme); } catch { /* Theme preference is optional. */ }
+  }, [theme]);
+
+  useEffect(() => {
+    if (!draggingPreview) return;
+    const move = (event: PointerEvent) => {
+      const bounds = workspaceRef.current?.getBoundingClientRect();
+      if (!bounds) return;
+      setPreviewWidth(Math.max(340, Math.min(bounds.width * 0.68, bounds.right - event.clientX)));
+    };
+    const stop = () => setDraggingPreview(false);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop, { once: true });
+    window.addEventListener("pointercancel", stop, { once: true });
+    return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", stop); window.removeEventListener("pointercancel", stop); };
+  }, [draggingPreview]);
+
+  useEffect(() => {
+    if (activeWorkflow?.steps.length && messages.length === 0 && artifacts.length === 0) showWorkflowArtifact(activeWorkflow);
+  // Seed only an empty chat; subsequent edits are synchronized by the preview callback.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWorkflow?.workflow_id, activeWorkflow?.version]);
+
+  useEffect(() => {
+    const running = artifacts.filter((artifact): artifact is Extract<AskAIArtifact, { kind: "task" }> =>
+      artifact.kind === "task" && !["SUCCESS", "FAILED", "UNCERTAIN", "STOPPED"].includes(artifact.status));
+    if (!running.length) return;
+    const timer = window.setInterval(() => {
+      for (const task of running) {
+        void api.getExecutionStatus(task.runId).then((response) => {
+          const run = response.run;
+          if (!run) return;
+          setArtifacts((current) => current.map((artifact) => artifact.id === task.id && artifact.kind === "task" ? {
+            ...artifact,
+            status: run.state,
+            verification: run.verification_state,
+            safeStopReason: run.safe_stop_reason,
+            steps: (run.step_results || []).map((step: any) => ({ action: step.action, passed: step.passed, error_message: step.error_message })),
+            updatedAt: Date.now(),
+          } : artifact));
+        }).catch(() => undefined);
+      }
+    }, 1200);
+    return () => window.clearInterval(timer);
+  }, [artifacts]);
+
+  const upsertArtifact = (artifact: AskAIArtifact) => {
+    setArtifacts((current) => [...current.filter((item) => item.id !== artifact.id), artifact]);
+    setActiveArtifactId(artifact.id);
+    setPreviewOpen(true);
+  };
+
+  const showWorkflowArtifact = (workflow: WorkflowDefinition) => {
+    const artifactId = `workflow:${workflow.workflow_id}`;
+    setArtifacts((current) => {
+      const existing = current.find((artifact) => artifact.id === artifactId);
+      const next: AskAIArtifact = { id: artifactId, kind: "workflow", title: workflow.title, workflow, updatedAt: Date.now() };
+      return [...current.filter((artifact) => artifact.id !== artifactId), existing && existing.kind === "workflow" ? { ...existing, ...next } : next];
+    });
+    setActiveArtifactId(artifactId);
+    setPreviewOpen(true);
+  };
+
+  const handleWorkflowPreviewChange = (artifactId: string, workflow: WorkflowDefinition) => {
+    setArtifacts((current) => current.map((artifact) => artifact.id === artifactId && artifact.kind === "workflow"
+      ? { ...artifact, title: workflow.title, workflow, updatedAt: Date.now() }
+      : artifact));
+    onWorkflowUpdated?.(workflow);
+  };
+
+  const registerRunArtifact = (run: any, workflow: WorkflowDefinition) => {
+    if (!run?.id) return;
+    upsertArtifact({
+      id: `run:${run.id}`,
+      kind: "task",
+      title: `Run · ${workflow.title}`,
+      runId: run.id,
+      workflowId: workflow.workflow_id,
+      status: run.state || "PRECHECK",
+      verification: run.verification_state,
+      safeStopReason: run.safe_stop_reason,
+      steps: (run.step_results || []).map((step: any) => ({ action: step.action, passed: step.passed, error_message: step.error_message })),
+      updatedAt: Date.now(),
+    });
+  };
+
   const handleNewConversation = () => {
     setActiveThreadId(`chat_${crypto.randomUUID()}`);
     setMessages([]);
+    setArtifacts([]);
+    setActiveArtifactId("");
+    setPreviewOpen(false);
     setAttachments([]);
     setInputText("");
     setPhase("idle");
@@ -100,6 +202,9 @@ export const AskAIView: React.FC<Props> = ({
     abortControllerRef.current?.abort();
     setActiveThreadId(thread.id);
     setMessages(thread.messages);
+    setArtifacts(thread.artifacts || []);
+    setActiveArtifactId(thread.activeArtifactId || thread.artifacts?.[0]?.id || "");
+    setPreviewOpen(Boolean(thread.artifacts?.length));
     setAttachments([]);
     setPhase("idle");
     setErrorMessage(null);
@@ -129,6 +234,7 @@ export const AskAIView: React.FC<Props> = ({
     try {
       const result = await api.executeWorkflow(workflow, {}, undefined, "dry_run");
       const run = result.run;
+      if (run) registerRunArtifact(run, workflow);
       setTestReports((current) => ({
         ...current,
         [messageId]: { text: run ? `Dry run ${String(run.state || "finished").toLowerCase()}. ${run.safe_stop_reason || "No browser actions were performed."}` : "Dry run finished without a run report." },
@@ -138,7 +244,8 @@ export const AskAIView: React.FC<Props> = ({
     }
   };
 
-  const approvalMatchesSelectedWorkflow = Boolean(activeWorkflow && activeApproval
+  const activePreviewArtifact = artifacts.find((artifact) => artifact.id === activeArtifactId);
+  const approvalMatchesSelectedWorkflow = Boolean(activeWorkflow && (!activePreviewArtifact || (activePreviewArtifact.kind === "workflow" && activePreviewArtifact.workflow.workflow_id === activeWorkflow.workflow_id)) && activeApproval
     && activeApproval.workflow_id === activeWorkflow.workflow_id
     && activeApproval.version === activeWorkflow.version
     && activeApproval.version_hash === activeWorkflow.content_hash
@@ -156,7 +263,7 @@ export const AskAIView: React.FC<Props> = ({
       const response = await api.executeWorkflow(activeWorkflow, {}, activeApproval.id, "run");
       const run = response.run;
       setTestReports((current) => ({ ...current, approved: { text: run ? `Run ${String(run.state || "started").toLowerCase()} · ${run.id}` : "The run request was accepted." } }));
-      onNavigate("Live Run");
+      if (run) registerRunArtifact(run, activeWorkflow);
     } catch (error) {
       setTestReports((current) => ({ ...current, approved: { text: error instanceof Error ? error.message : "The approved workflow could not be started." } }));
     }
@@ -179,6 +286,8 @@ export const AskAIView: React.FC<Props> = ({
     setErrorMessage(null);
     setInputText("");
     const attachedFiles = attachments;
+    const chatWorkflowArtifact = artifacts.find((artifact) => artifact.id === activeArtifactId && artifact.kind === "workflow");
+    const chatWorkflow = chatWorkflowArtifact?.kind === "workflow" ? chatWorkflowArtifact.workflow : activeWorkflow;
     const userMessageText = attachedFiles.length
       ? `${query}\n\nAttached files: ${attachedFiles.map((file) => file.name).join(", ")}`
       : query;
@@ -210,6 +319,7 @@ export const AskAIView: React.FC<Props> = ({
       };
       setMessages((prev) => [...prev, responseMsg]);
       setPhase("streaming_response");
+      let streamedText = "";
       try {
         await api.streamConversation({
           message: query,
@@ -217,11 +327,14 @@ export const AskAIView: React.FC<Props> = ({
             role: message.sender === "user" ? "user" : "assistant",
             content: message.text,
           })),
-          active_workflow: activeWorkflow,
+          active_workflow: chatWorkflow,
           attachments: attachedFiles.map(({ name, content }) => ({ name, content })),
         }, controller.signal, (delta) => {
+          streamedText += delta;
           setMessages((prev) => prev.map((message) => message.id === responseId ? { ...message, text: message.text + delta } : message));
         });
+        const artifactId = makeArtifact(streamedText, responseId);
+        if (artifactId) setMessages((prev) => prev.map((message) => message.id === responseId ? { ...message, artifactId } : message));
       } catch (err: any) {
         if (err.name === "AbortError") {
           setMessages((prev) => prev.map((message) => message.id === responseId && !message.text ? { ...message, text: "Response stopped." } : message));
@@ -245,12 +358,19 @@ export const AskAIView: React.FC<Props> = ({
     try {
       const aiResponse = await defaultAIService.processGoal(workflowPrompt, {
         savedWorkflows,
-        activeWorkflow,
+        activeWorkflow: chatWorkflow,
         history: [...messages, userMsg],
         signal: controller.signal,
       });
 
       setMessages((prev) => [...prev, aiResponse]);
+
+      if (aiResponse.proposedPlan?.workflow) {
+        showWorkflowArtifact(aiResponse.proposedPlan.workflow);
+        (onWorkflowUpdated || onWorkflowGenerated)(aiResponse.proposedPlan.workflow);
+      } else if (aiResponse.matchedWorkflow) {
+        showWorkflowArtifact(aiResponse.matchedWorkflow);
+      }
 
       if (aiResponse.type === "clarification_request") {
         setPhase("asking_question");
@@ -299,6 +419,8 @@ export const AskAIView: React.FC<Props> = ({
 
   const handleSelectClarification = async (questionId: string, option: string) => {
     const question = [...messages].reverse().find((message) => message.clarification?.id === questionId)?.clarification;
+    const workflowArtifact = artifacts.find((artifact) => artifact.id === activeArtifactId && artifact.kind === "workflow");
+    const chatWorkflow = workflowArtifact?.kind === "workflow" ? workflowArtifact.workflow : activeWorkflow;
     setErrorMessage(null);
     setCustomClarificationAnswers((answers) => ({ ...answers, [questionId]: "" }));
     setPhase("preparing_plan");
@@ -320,12 +442,16 @@ export const AskAIView: React.FC<Props> = ({
     try {
       const response = await defaultAIService.resolveClarification(questionId, option, {
         savedWorkflows,
-        activeWorkflow,
+        activeWorkflow: chatWorkflow,
         history: [...messages, choiceMsg],
         signal: controller.signal,
       });
 
       setMessages((prev) => [...prev, response]);
+      if (response.proposedPlan?.workflow) {
+        showWorkflowArtifact(response.proposedPlan.workflow);
+        (onWorkflowUpdated || onWorkflowGenerated)(response.proposedPlan.workflow);
+      } else if (response.matchedWorkflow) showWorkflowArtifact(response.matchedWorkflow);
       setPhase(response.type === "clarification_request" ? "asking_question" : response.type === "action_proposal" ? "ready_for_approval" : "idle");
     } catch (err: any) {
       if (err.name !== "AbortError") {
@@ -342,27 +468,70 @@ export const AskAIView: React.FC<Props> = ({
     if (answer) void handleSelectClarification(questionId, answer);
   };
 
+  const handleCopyMessage = (text: string) => { void navigator.clipboard?.writeText(text).catch(() => undefined); };
+  const handleRetryMessage = (messageId: string) => {
+    const index = messages.findIndex((message) => message.id === messageId);
+    const target = messages[index]?.sender === "user" ? messages[index] : [...messages.slice(0, index)].reverse().find((message) => message.sender === "user");
+    if (target?.text) void handleSend(target.text.replace(/\n\nAttached files:.*$/s, ""));
+  };
+  const handleEditMessage = (messageId: string) => {
+    const index = messages.findIndex((message) => message.id === messageId);
+    const message = messages[index];
+    if (!message || message.sender !== "user") return;
+    setInputText(message.text.replace(/\n\nAttached files:.*$/s, ""));
+    setMessages((current) => current.slice(0, index));
+  };
+  const handleFeedback = (messageId: string, value: "up" | "down") => {
+    setMessages((current) => current.map((message) => message.id === messageId ? { ...message, feedback: message.feedback === value ? undefined : value } : message));
+  };
+
   const handleUseSavedWorkflow = (wf: WorkflowDefinition) => {
-    onWorkflowGenerated(wf);
-    onNavigate("My Workflows");
+    (onWorkflowUpdated || onWorkflowGenerated)(wf);
+    showWorkflowArtifact(wf);
   };
 
   const handleReviewProposedPlan = (wf: WorkflowDefinition) => {
-    onWorkflowGenerated(wf);
-    onNavigate("Permissions");
+    (onWorkflowUpdated || onWorkflowGenerated)(wf);
+    showWorkflowArtifact(wf);
+  };
+
+  const handleWorkflowUpdated = (workflow: WorkflowDefinition) => {
+    (onWorkflowUpdated || onWorkflowGenerated)(workflow);
+  };
+
+  const makeArtifact = (text: string, sourceMessageId: string) => {
+    const fenced = [...text.matchAll(/```([\w-]*)\s*\n([\s\S]*?)```/g)];
+    if (fenced.length) {
+      const block = fenced[fenced.length - 1];
+      const language = block[1].toLowerCase();
+      const content = block[2].trim();
+      const artifact: AskAIArtifact = language === "html"
+        ? { id: `web:${sourceMessageId}`, kind: "web", title: "Web preview", language, content, updatedAt: Date.now() }
+        : { id: `code:${sourceMessageId}`, kind: "code", title: `Code · ${language || "text"}`, language: language || "text", content, updatedAt: Date.now() };
+      upsertArtifact(artifact);
+      return artifact.id;
+    }
+    if (/\b(write|draft|create|prepare)\b.{0,30}\b(document|report|proposal|email|letter|article|guide|README)\b/i.test(text)) {
+      const artifact: AskAIArtifact = { id: `document:${sourceMessageId}`, kind: "document", title: "Draft document", content: text, updatedAt: Date.now() };
+      upsertArtifact(artifact);
+      return artifact.id;
+    }
+    return undefined;
   };
 
   const latestClarificationId = [...messages].reverse().find((message) => message.clarification)?.clarification?.id;
+  const selectedWorkflowArtifact = artifacts.find((artifact) => artifact.id === activeArtifactId && artifact.kind === "workflow");
+  const chatWorkflow = selectedWorkflowArtifact?.kind === "workflow" ? selectedWorkflowArtifact.workflow : activeWorkflow;
 
   return (
-    <div className="ask-ai-view-container">
+    <div className="ask-ai-view-container" data-theme={theme}>
       {/* HEADER BAR */}
       <div className="ask-ai-header">
         <div className="ask-ai-header-titles">
           <h2>Ask AI</h2>
           <p>
-            {activeWorkflow?.steps.length
-              ? `Ask for a change to “${activeWorkflow.title}”. Each reply creates a new draft version for review.`
+            {chatWorkflow?.steps.length
+              ? `Ask for a change to “${chatWorkflow.title}”. Each reply creates a new draft version for review.`
               : "Describe what you want to automate. WhistleCode can find a saved workflow or prepare a new draft for review."}
           </p>
         </div>
@@ -387,12 +556,16 @@ export const AskAIView: React.FC<Props> = ({
             {threads.map((thread) => <option key={thread.id} value={thread.id}>{thread.title}</option>)}
           </select>
           <button type="button" className="ask-ai-new-chat" onClick={handleNewConversation}>＋ New chat</button>
-          {activeWorkflow && <span className="ask-ai-context-chip" title={`${activeWorkflow.title}, version ${activeWorkflow.version}`}><i /> {activeWorkflow.title} · v{activeWorkflow.version}</span>}
+          <button type="button" className="ask-ai-theme-toggle" onClick={() => setTheme((value) => value === "dark" ? "light" : "dark")} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}>{theme === "dark" ? "☼ Light" : "◐ Dark"}</button>
+          {artifacts.length > 0 && !previewOpen && <button type="button" className="ask-ai-new-chat" onClick={() => setPreviewOpen(true)}>Open workspace</button>}
+          {chatWorkflow && <span className="ask-ai-context-chip" title={`${chatWorkflow.title}, version ${chatWorkflow.version}`}><i /> {chatWorkflow.title} · v{chatWorkflow.version}</span>}
           {approvalMatchesSelectedWorkflow && <button type="button" className="ask-ai-run-approved" onClick={handleRunApprovedWorkflow} disabled={!!testReports.approved?.pending}>Run approved workflow →</button>}
         </div>
       </div>
       {testReports.approved && <div className="ask-ai-test-result approved-run-result" role="status">{testReports.approved.text}</div>}
 
+      <div className="ask-ai-workspace" ref={workspaceRef}>
+      <section className="ask-ai-chat-pane" aria-label="AI conversation">
       {/* CONVERSATION STREAM */}
       <div className="ask-ai-chat-stream">
         {messages.length === 0 && (
@@ -584,7 +757,13 @@ export const AskAIView: React.FC<Props> = ({
                 </div>
               )}
 
-              <span className="chat-timestamp">{msg.timestamp}</span>
+              <div className="ask-ai-message-footer"><span className="chat-timestamp">{msg.timestamp}</span><div className="ask-ai-message-actions" aria-label="Message actions">
+                <button type="button" title="Copy message" aria-label="Copy message" onClick={() => handleCopyMessage(msg.text)}>Copy</button>
+                {msg.sender === "user" && <button type="button" title="Edit and resend" aria-label="Edit message" onClick={() => handleEditMessage(msg.id)}>Edit</button>}
+                {msg.sender !== "system" && <button type="button" title="Retry this request" aria-label="Retry message" onClick={() => handleRetryMessage(msg.id)} disabled={phase !== "idle"}>Retry</button>}
+                {msg.sender === "ai" && <><button type="button" title="Helpful" aria-label="Helpful response" aria-pressed={msg.feedback === "up"} onClick={() => handleFeedback(msg.id, "up")}>Useful</button><button type="button" title="Not helpful" aria-label="Unhelpful response" aria-pressed={msg.feedback === "down"} onClick={() => handleFeedback(msg.id, "down")}>Not useful</button></>}
+                {msg.artifactId && <button type="button" onClick={() => { setActiveArtifactId(msg.artifactId!); setPreviewOpen(true); }}>View artifact →</button>}
+              </div></div>
             </div>
           </div>
         ))}
@@ -668,7 +847,7 @@ export const AskAIView: React.FC<Props> = ({
                 handleSend();
               }
             }}
-            placeholder={activeWorkflow?.steps.length ? "Ask about this workflow, request a change, or ask a question…" : "Ask a question, write code, or describe a workflow…"}
+            placeholder="Ask anything or tell me what you want to build..."
             disabled={phase !== "idle" && phase !== "asking_question"}
           />
           <div className="ask-ai-form-actions">
@@ -680,8 +859,19 @@ export const AskAIView: React.FC<Props> = ({
             >
               {phase === "asking_question" ? "Send follow-up ↗" : isConversationQuestion(inputText) ? "Send ↗" : "Send ↗"}
             </button>
+            {phase === "streaming_response" && <button type="button" className="ask-ai-stop-button" onClick={handleCancelRequest}>Stop</button>}
           </div>
         </form>
+      </div>
+      </section>
+      {previewOpen && artifacts.length > 0 && <>
+        <div className="ask-ai-preview-resizer" role="separator" aria-label="Resize live preview" aria-orientation="vertical" aria-valuenow={Math.round(previewWidth)} tabIndex={0}
+          onPointerDown={(event) => { event.preventDefault(); setDraggingPreview(true); }}
+          onKeyDown={(event) => { if (event.key === "ArrowLeft") setPreviewWidth((width) => Math.min(780, width + 24)); if (event.key === "ArrowRight") setPreviewWidth((width) => Math.max(340, width - 24)); }} />
+        <AskAIPreviewPanel artifacts={artifacts} selectedId={activeArtifactId} width={previewWidth} expanded={previewExpanded}
+          onSelect={setActiveArtifactId} onResize={setPreviewWidth} onExpand={() => setPreviewExpanded((value) => !value)} onClose={() => setPreviewOpen(false)}
+          onWorkflowChange={handleWorkflowPreviewChange} onOpenRun={() => onNavigate("Live Run")} />
+      </>}
       </div>
     </div>
   );

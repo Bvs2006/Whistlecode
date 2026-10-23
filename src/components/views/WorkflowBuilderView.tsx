@@ -52,10 +52,11 @@ export const WorkflowBuilderView: React.FC<Props> = ({ workflow, onWorkflowSaved
     try {
       const persisted = saved.find((item) => item.workflow_id === draft.workflow_id);
       const needsNewVersion = Boolean(persisted && (dirty || !draft.content_hash || persisted.content_hash !== draft.content_hash));
+      const alreadyProposedNextVersion = Boolean(persisted && draft.version === persisted.version + 1 && draft.parent_version === persisted.version);
       const candidate = { ...draft, title: draft.title.trim(), intent: draft.intent.trim(),
-        version: needsNewVersion ? draft.version + 1 : draft.version,
-        parent_version: needsNewVersion ? draft.version : draft.parent_version,
-        change_summary: needsNewVersion ? "User reviewed workflow edits" : draft.change_summary };
+        version: needsNewVersion && !alreadyProposedNextVersion ? draft.version + 1 : draft.version,
+        parent_version: needsNewVersion && !alreadyProposedNextVersion ? draft.version : draft.parent_version,
+        change_summary: needsNewVersion ? draft.change_summary || "User reviewed workflow edits" : draft.change_summary };
       const response = await api.saveWorkflow(candidate);
       const stored = response.workflow as WorkflowDefinition;
       setDraft(stored); setDirty(false); setNotice(`Saved version ${stored.version}.`);

@@ -9,6 +9,8 @@ export type ConversationMessage = {
   text: string;
   timestamp: string;
   type: MessageType;
+  artifactId?: string;
+    feedback?: "up" | "down";
   clarification?: ClarificationQuestion;
   matchedWorkflow?: WorkflowDefinition;
   proposedPlan?: {
