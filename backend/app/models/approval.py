@@ -1,7 +1,11 @@
 from __future__ import annotations
 import hmac
 import hashlib
+import json
+import os
+import secrets
 from typing import List, Optional, Dict, Any
+from pathlib import Path
 from pydantic import BaseModel, Field
 
 
@@ -24,10 +28,44 @@ class ApprovalRecord(BaseModel):
     revoked_at: Optional[str] = None
     signature: str = ""
 
-    def generate_signature(self, secret_key: str = "local-antigravity-secret-key") -> str:
-        payload = f"{self.workflow_id}:{self.version}:{self.version_hash}:{self.approver}:{self.expires_at}"
-        return hmac.new(secret_key.encode('utf-8'), payload.encode('utf-8'), hashlib.sha256).hexdigest()
+    @staticmethod
+    def signing_key() -> bytes:
+        configured = os.environ.get("WHISTLECODE_APPROVAL_SIGNING_KEY")
+        if configured:
+            return configured.encode("utf-8")
+        key_path = Path(__file__).resolve().parents[2] / "approval_signing.key"
+        try:
+            key = key_path.read_bytes()
+        except FileNotFoundError:
+            key_path.parent.mkdir(parents=True, exist_ok=True)
+            key = secrets.token_bytes(32)
+            try:
+                with key_path.open("xb") as key_file:
+                    key_file.write(key)
+            except FileExistsError:
+                key = key_path.read_bytes()
+        if len(key) < 32:
+            raise RuntimeError("WhistleCode approval signing key is invalid; configure WHISTLECODE_APPROVAL_SIGNING_KEY or remove the invalid local key.")
+        return key
 
-    def verify_signature(self, secret_key: str = "local-antigravity-secret-key") -> bool:
+    def signed_payload(self) -> bytes:
+        payload = {
+            "id": self.id,
+            "workflow_id": self.workflow_id,
+            "version": self.version,
+            "version_hash": self.version_hash,
+            "scope": self.scope.model_dump(mode="json"),
+            "approver": self.approver,
+            "created_at": self.created_at,
+            "expires_at": self.expires_at,
+        }
+        return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+    def generate_signature(self, secret_key: Optional[bytes | str] = None) -> str:
+        key = secret_key.encode("utf-8") if isinstance(secret_key, str) else secret_key
+        key = key or self.signing_key()
+        return hmac.new(key, self.signed_payload(), hashlib.sha256).hexdigest()
+
+    def verify_signature(self, secret_key: Optional[bytes | str] = None) -> bool:
         expected = self.generate_signature(secret_key)
         return hmac.compare_digest(self.signature, expected)

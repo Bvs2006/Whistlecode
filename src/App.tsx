@@ -3,98 +3,41 @@ import { Header } from "./components/Header";
 import { Sidebar } from "./components/Sidebar";
 import { AskAIView } from "./components/views/AskAIView";
 import { OverviewView } from "./components/views/OverviewView";
-import { TeachTaskView } from "./components/views/TeachTaskView";
+import { RecordingStudio } from "./components/recording/RecordingStudio";
 import { WorkflowBuilderView } from "./components/views/WorkflowBuilderView";
 import { PlanApprovalView } from "./components/views/PlanApprovalView";
 import { LiveRunView } from "./components/views/LiveRunView";
 import { PluginManagerView } from "./components/plugins/PluginManagerView";
 import { AuditTrailViewer } from "./components/audit/AuditTrailViewer";
 import type { AppSection, WorkflowDefinition, ApprovalRecord } from "./types";
+import { LandingPage } from "./components/LandingPage";
+import { PaperOrganizerSandboxView } from "./components/views/PaperOrganizerSandboxView";
 
-const DEFAULT_WORKFLOW: WorkflowDefinition = {
-  workflow_id: "wf_create_customer",
-  title: "Support Ticket Automation & Customer Portal",
-  intent: "Observe and execute support ticket routing, customer profile registration, and restaurant booking",
-  allowed_origins: ["http://localhost:8000", "http://127.0.0.1:8000"],
-  parameters: [
-    { name: "customer_name", type: "string", default_value: "John Smith", required: true },
-    { name: "customer_email", type: "string", default_value: "john@example.com", required: true },
-    { name: "urgency", type: "string", default_value: "HIGH", required: true },
-    { name: "min_rating", type: "number", default_value: 4.5, required: true },
-  ],
-  steps: [
-    {
-      id: "s1",
-      name: "Navigate to Customer Portal",
-      action: "navigate",
-      args: { url: "http://localhost:8000/testsite#customers" },
-      risk: "low",
-      requires_confirmation: false,
-      idempotent: true,
-      preconditions: [],
-      postconditions: [{ type: "url_matches", value: "testsite" }],
-      enabled: true,
-      next_step_id: "s2",
-    },
-    {
-      id: "s2",
-      name: "Enter Customer Name",
-      action: "type",
-      target: { test_id: "customer-name-input", role: "textbox", name: "Customer Full Name" },
-      args: { value: "{{customer_name}}" },
-      risk: "medium",
-      requires_confirmation: false,
-      idempotent: true,
-      preconditions: [],
-      postconditions: [{ type: "field_value_equals", selector: "customer-name-input", value: "{{customer_name}}" }],
-      enabled: true,
-      next_step_id: "s3",
-    },
-    {
-      id: "s3",
-      name: "Enter Customer Email",
-      action: "type",
-      target: { test_id: "customer-email-input", role: "textbox", name: "Email Address" },
-      args: { value: "{{customer_email}}" },
-      risk: "medium",
-      requires_confirmation: false,
-      idempotent: true,
-      preconditions: [],
-      postconditions: [],
-      enabled: true,
-      next_step_id: "s4",
-    },
-    {
-      id: "s4",
-      name: "Submit Registration Form",
-      action: "submit",
-      target: { test_id: "btn-save-customer", role: "button", name: "Save Customer" },
-      args: {},
-      risk: "high",
-      requires_confirmation: true,
-      idempotent: false,
-      preconditions: [],
-      postconditions: [{ type: "element_exists", selector: ".alert-success" }],
-      enabled: true,
-    },
-  ],
-  final_postconditions: [
-    { type: "element_exists", selector: ".alert-success" }
-  ],
+const createEmptyWorkflow = (): WorkflowDefinition => ({
+  workflow_id: `wf_${crypto.randomUUID()}`,
+  title: "Untitled workflow",
+  intent: "",
+  allowed_origins: [],
+  parameters: [],
+  steps: [],
+  final_postconditions: [],
   version: 1,
-  content_hash: "sha256:d8a9e0f391b19a3b68f94d930219c1b3f021938b8120391c01b239481923ab91",
-  change_summary: "Initial verified benchmark workflow",
-};
+  content_hash: "",
+  change_summary: "New workflow draft",
+});
 
 export function App() {
   const [activeSection, setActiveSection] = useState<AppSection>("Overview");
-  const [currentWorkflow, setCurrentWorkflow] = useState<WorkflowDefinition>(DEFAULT_WORKFLOW);
+  const [initialGoal, setInitialGoal] = useState("");
+  const [currentWorkflow, setCurrentWorkflow] = useState<WorkflowDefinition>(createEmptyWorkflow);
   const [activeApproval, setActiveApproval] = useState<ApprovalRecord | null>(null);
+  const [showWorkspace, setShowWorkspace] = useState(false);
 
   const handleWorkflowGenerated = (wf: WorkflowDefinition) => {
     setCurrentWorkflow(wf);
     setActiveApproval(null);
     setActiveSection("My Workflows");
+    setInitialGoal("");
   };
 
   const handleWorkflowSaved = (wf: WorkflowDefinition) => {
@@ -105,6 +48,8 @@ export function App() {
   const handleNavigate = (sec: AppSection) => {
     setActiveSection(sec);
   };
+
+  if (!showWorkspace) return <LandingPage onLaunch={() => setShowWorkspace(true)} />;
 
   return (
     <div className="app-shell">
@@ -126,6 +71,7 @@ export function App() {
         {activeSection === "Overview" && (
           <OverviewView
             onNavigate={handleNavigate}
+            onAskGoal={(goal) => { setInitialGoal(goal); setActiveSection("Ask AI"); }}
             onSelectWorkflow={(wf) => {
               setCurrentWorkflow(wf);
               setActiveSection("My Workflows");
@@ -135,10 +81,7 @@ export function App() {
 
         {/* 2. IMAGE 2: TEACH A TASK */}
         {activeSection === "Teach a Task" && (
-          <TeachTaskView
-            onWorkflowGenerated={handleWorkflowGenerated}
-            onNavigate={handleNavigate}
-          />
+          <RecordingStudio onWorkflowGenerated={handleWorkflowGenerated} />
         )}
 
         {/* 3. IMAGE 3: WORKFLOW BUILDER */}
@@ -157,6 +100,7 @@ export function App() {
             workflow={currentWorkflow}
             approval={activeApproval}
             onApprovalCreated={(appr) => setActiveApproval(appr)}
+            onApprovalRevoked={() => setActiveApproval(null)}
             onNavigateToLiveRun={() => setActiveSection("Live Run")}
             onNavigate={handleNavigate}
           />
@@ -181,12 +125,16 @@ export function App() {
         {activeSection === "Settings" && (
           <PluginManagerView />
         )}
+        {activeSection === "Test Site Sandbox" && <PaperOrganizerSandboxView />}
 
         {/* ASK AI — GENERAL TASK AGENT */}
         {activeSection === "Ask AI" && (
           <AskAIView
             onNavigate={handleNavigate}
             onWorkflowGenerated={handleWorkflowGenerated}
+            initialPrompt={initialGoal}
+            activeWorkflow={currentWorkflow.steps.length ? currentWorkflow : undefined}
+            activeApproval={activeApproval}
           />
         )}
       </main>

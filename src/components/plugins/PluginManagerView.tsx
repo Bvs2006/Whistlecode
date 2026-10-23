@@ -2,6 +2,15 @@ import React, { useState, useEffect } from "react";
 import { api } from "../../api/client";
 import type { PluginManifest, ToolDefinition } from "../../types";
 
+const integrations = [
+  { name: "Gmail", icon: "✉", group: "Email", description: "Find messages, summarize threads, and prepare replies.", tone: "gold" },
+  { name: "Google Calendar", icon: "▦", group: "Calendar", description: "Review availability and prepare event changes for approval.", tone: "green" },
+  { name: "Outlook", icon: "✉", group: "Email & calendar", description: "Work with mail and meetings in your Outlook account.", tone: "blue" },
+  { name: "Google Drive", icon: "▱", group: "Files", description: "Find, organize, and prepare updates to your documents.", tone: "green" },
+  { name: "Slack", icon: "⌘", group: "Messages", description: "Find conversations and prepare messages for review.", tone: "purple" },
+  { name: "Notion", icon: "N", group: "Knowledge", description: "Search and organize notes, pages, and team knowledge.", tone: "neutral" },
+];
+
 export const PluginManagerView: React.FC = () => {
   const [plugins, setPlugins] = useState<PluginManifest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -16,21 +25,23 @@ export const PluginManagerView: React.FC = () => {
   const [dryRun, setDryRun] = useState(true);
   const [testResult, setTestResult] = useState<any>(null);
   const [executing, setExecuting] = useState(false);
+  const [toolApproval, setToolApproval] = useState<{ id: string; expiresAt: string } | null>(null);
+  const [selectedIntegration, setSelectedIntegration] = useState<(typeof integrations)[number] | null>(null);
 
   // New plugin registration state
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [newPluginJson, setNewPluginJson] = useState(`{
-  "id": "plugin_slack_alerts",
-  "name": "Slack Integration Plugin",
+  "id": "plugin_custom_example",
+  "name": "Custom Tool Definition",
   "version": "1.0.0",
-  "description": "Post task completion alerts to team Slack channels",
-  "icon": "💬",
+  "description": "Metadata example; live execution requires an adapter",
+  "icon": "🧩",
   "enabled": true,
   "tools": [
     {
-      "name": "send_slack_message",
-      "display_name": "Send Slack Notification",
-      "description": "Sends rich message to Slack webhook",
+      "name": "custom_action",
+      "display_name": "Custom Action Metadata",
+      "description": "Example tool registration without a connected execution adapter",
       "parameters_schema": {
         "channel": { "type": "string" },
         "message": { "type": "string" }
@@ -60,7 +71,7 @@ export const PluginManagerView: React.FC = () => {
   const handleToggle = async (pluginId: string, currentEnabled: boolean) => {
     try {
       await api.togglePlugin(pluginId, !currentEnabled);
-      setPlugins(plugins.map(p => p.id === pluginId ? { ...p, enabled: !currentEnabled } : p));
+    setPlugins((current) => current.map(p => p.id === pluginId ? { ...p, enabled: !currentEnabled } : p));
     } catch (err: any) {
       alert("Error toggling plugin: " + err.message);
     }
@@ -69,11 +80,18 @@ export const PluginManagerView: React.FC = () => {
   const handleOpenToolTester = (pluginId: string, tool: ToolDefinition) => {
     setActiveTestingTool({ pluginId, tool });
     const defaultArgs: Record<string, any> = {};
-    Object.keys(tool.parameters_schema || {}).forEach((k) => {
-      defaultArgs[k] = k === "url" ? "https://httpbin.org/post" : "test_value";
+    Object.entries(tool.parameters_schema || {}).forEach(([key, value]: [string, any]) => {
+      const type = typeof value === "string" ? value : value?.type;
+      defaultArgs[key] = key === "url" ? "https://httpbin.org/post" : type === "object" ? {} : type === "array" ? [] : type === "boolean" ? false : type === "number" || type === "integer" ? 0 : "test_value";
     });
     setTestArgs(JSON.stringify(defaultArgs, null, 2));
     setTestResult(null);
+    setToolApproval(null);
+  };
+
+  const invalidateToolApproval = () => {
+    if (toolApproval) void api.revokeApproval(toolApproval.id).catch(() => undefined);
+    setToolApproval(null);
   };
 
   const handleExecuteTool = async () => {
@@ -82,13 +100,16 @@ export const PluginManagerView: React.FC = () => {
     setTestResult(null);
     try {
       const parsedArgs = JSON.parse(testArgs);
-      const res = await api.executePluginTool(
-        activeTestingTool.pluginId,
-        activeTestingTool.tool.name,
-        parsedArgs,
-        dryRun
-      );
-      setTestResult(res);
+      if (dryRun) {
+        setTestResult(await api.executePluginTool(activeTestingTool.pluginId, activeTestingTool.tool.name, parsedArgs, true));
+      } else if (!toolApproval) {
+        const res = await api.approvePluginTool(activeTestingTool.pluginId, activeTestingTool.tool.name, parsedArgs);
+        setToolApproval({ id: res.approval.id, expiresAt: res.grant_expires_at });
+        setTestResult({ plan: res.plan, message: "Review the exact call above, then dispatch it once." });
+      } else {
+        setTestResult(await api.dispatchApprovedPluginTool(activeTestingTool.pluginId, activeTestingTool.tool.name, parsedArgs, toolApproval.id));
+        setToolApproval(null);
+      }
     } catch (err: any) {
       setTestResult({ error: err.message });
     } finally {
@@ -113,7 +134,7 @@ export const PluginManagerView: React.FC = () => {
         <div>
           <h2>Plugins & Tool Resource Center</h2>
           <p className="subtitle">
-            Future-proof AI tool architecture: Register external APIs, database tools, file exporters, and Model Context Protocol (MCP) agents.
+            Built-in HTTP, file export, and notification adapters are available. Every live call needs a short-lived approval bound to the exact arguments. Metadata-only tools stay unavailable until an adapter is connected.
           </p>
         </div>
         <button
@@ -125,6 +146,48 @@ export const PluginManagerView: React.FC = () => {
       </div>
 
       {error && <div className="error-banner">⚠️ {error}</div>}
+
+      <section className="integration-catalog" aria-labelledby="integration-heading">
+        <div className="integration-heading-row">
+          <div>
+            <span className="integration-eyebrow">YOUR EVERYDAY TOOLS</span>
+            <h3 id="integration-heading">Integrations</h3>
+            <p>Bring your work apps into one place. Every connected action will remain visible and approval controlled.</p>
+          </div>
+          <span className="integration-count">{integrations.length} integrations</span>
+        </div>
+        <div className="integration-grid">
+          {integrations.map((item, index) => (
+            <article className="integration-card" key={item.name} style={{ animationDelay: `${index * 55}ms` }}>
+              <div className="integration-card-top">
+                <span className={`integration-app-icon integration-${item.tone}`} aria-hidden="true">{item.icon}</span>
+                <span className="integration-status"><i /> Not connected</span>
+              </div>
+              <span className="integration-group">{item.group}</span>
+              <h4>{item.name}</h4>
+              <p>{item.description}</p>
+              <button className="integration-connect" onClick={() => setSelectedIntegration(item)}>
+                View connection details <span aria-hidden="true">↗</span>
+              </button>
+            </article>
+          ))}
+        </div>
+        <div className="integration-footnote"><span aria-hidden="true">✳</span> Connections are not active yet. Account sign-in and secure authorization need to be configured before these apps can access your data.</div>
+      </section>
+
+      {selectedIntegration && (
+        <div className="modal-backdrop" onClick={() => setSelectedIntegration(null)}>
+          <div className="modal-card integration-detail-modal" role="dialog" aria-modal="true" aria-labelledby="integration-detail-title" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div className="integration-modal-title"><span className={`integration-app-icon integration-${selectedIntegration.tone}`}>{selectedIntegration.icon}</span><div><span className="integration-eyebrow">ACCOUNT CONNECTION</span><h3 id="integration-detail-title">{selectedIntegration.name}</h3></div></div>
+              <button className="icon-btn" onClick={() => setSelectedIntegration(null)} aria-label="Close">✕</button>
+            </div>
+            <p className="subtitle">{selectedIntegration.description}</p>
+            <div className="integration-setup-note"><strong>Connection setup is not available yet</strong><span>This workspace does not have a secure sign-in flow for {selectedIntegration.name} configured, so no account access has been granted.</span></div>
+            <div className="modal-actions-row"><button className="btn btn-secondary" onClick={() => setSelectedIntegration(null)}>Close</button></div>
+          </div>
+        </div>
+      )}
 
       <div className="plugins-grid">
         {loading ? (
@@ -192,7 +255,7 @@ export const PluginManagerView: React.FC = () => {
           <div className="modal-card">
             <div className="modal-header">
               <h3>⚡ Test Tool: {activeTestingTool.tool.display_name}</h3>
-              <button className="icon-btn" onClick={() => setActiveTestingTool(null)}>✕</button>
+              <button className="icon-btn" onClick={() => { invalidateToolApproval(); setActiveTestingTool(null); }}>✕</button>
             </div>
 
             <p className="subtitle">{activeTestingTool.tool.description}</p>
@@ -202,7 +265,7 @@ export const PluginManagerView: React.FC = () => {
               <textarea
                 rows={5}
                 value={testArgs}
-                onChange={(e) => setTestArgs(e.target.value)}
+                onChange={(e) => { invalidateToolApproval(); setTestArgs(e.target.value); }}
               />
             </div>
 
@@ -211,16 +274,16 @@ export const PluginManagerView: React.FC = () => {
                 <input
                   type="checkbox"
                   checked={dryRun}
-                  onChange={(e) => setDryRun(e.target.checked)}
+                  onChange={(e) => { invalidateToolApproval(); setDryRun(e.target.checked); }}
                 />
-                <span>Dry-Run Simulation Mode (Verify policy & parameters without external side effects)</span>
+                <span>Dry-run mode — no live dispatch</span>
               </label>
             </div>
 
             <div className="modal-actions-row">
               <button
                 className="btn btn-secondary"
-                onClick={() => setActiveTestingTool(null)}
+                onClick={() => { invalidateToolApproval(); setActiveTestingTool(null); }}
               >
                 Close
               </button>
@@ -229,10 +292,11 @@ export const PluginManagerView: React.FC = () => {
                 onClick={handleExecuteTool}
                 disabled={executing}
               >
-                {executing ? "Executing..." : dryRun ? "Run Dry Simulation" : "Dispatch Live Tool Call"}
+                {executing ? "Working…" : dryRun ? "Run dry preview" : toolApproval ? "Dispatch approved call once" : "Approve exact call"}
               </button>
             </div>
 
+            {toolApproval && !dryRun && <div className="approval-scope-summary"><strong>One-time approval created</strong><span>Bound to the exact plugin, tool, and arguments above.</span><span>Expires {new Date(toolApproval.expiresAt).toLocaleString()}</span><span>Editing arguments cancels this approval.</span></div>}
             {testResult && (
               <div className="test-result-box" style={{ marginTop: "16px" }}>
                 <h4>Execution Output:</h4>
@@ -253,7 +317,7 @@ export const PluginManagerView: React.FC = () => {
             </div>
 
             <p className="subtitle">
-              Paste standard Plugin Manifest JSON. Defines custom tools, risk tiers, and parameter schemas for future extensions.
+              Register plugin metadata and parameter schemas. Live calls require a supported built-in adapter and a fresh one-time approval.
             </p>
 
             <div className="form-group">

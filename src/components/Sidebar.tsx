@@ -17,7 +17,11 @@ export function Sidebar({ activeSection, onNavigate }: SidebarProps) {
     { section: "Activity", label: "Activity", icon: "🕒" },
     { section: "Permissions", label: "Permissions", icon: "🛡" },
     { section: "Live Run", label: "Live Run", icon: "▶" },
+    { section: "Test Site Sandbox", label: "Paper Sandbox", icon: "▧" },
   ];
+  const visibleMenuItems = menuItems.filter((item) =>
+    !searchVal.trim() || item.label.toLowerCase().includes(searchVal.trim().toLowerCase()) || item.section.toLowerCase().includes(searchVal.trim().toLowerCase())
+  );
 
   return (
     <aside className="sidebar-img1">
@@ -27,7 +31,7 @@ export function Sidebar({ activeSection, onNavigate }: SidebarProps) {
         <input
           type="text"
           className="sidebar-search-input-img1"
-          placeholder="Search workflows, tasks and history"
+          placeholder="Find a workspace section"
           value={searchVal}
           onChange={(e) => setSearchVal(e.target.value)}
         />
@@ -37,13 +41,15 @@ export function Sidebar({ activeSection, onNavigate }: SidebarProps) {
 
       {/* NAV ITEMS */}
       <nav className="sidebar-nav-list-img1">
-        {menuItems.map((item) => {
+        {visibleMenuItems.map((item) => {
           const isActive = activeSection === item.section;
           return (
             <button
               key={item.section}
               type="button"
               className={`sidebar-nav-item-img1 ${isActive ? "active" : ""}`}
+              title={item.label}
+              aria-label={item.label}
               onClick={() => onNavigate(item.section)}
             >
               <span className="nav-icon-img1">{item.icon}</span>
@@ -51,12 +57,15 @@ export function Sidebar({ activeSection, onNavigate }: SidebarProps) {
             </button>
           );
         })}
+        {visibleMenuItems.length === 0 && <p className="sidebar-no-results">No matching section</p>}
 
         <div className="sidebar-divider-img1" />
 
         <button
           type="button"
           className={`sidebar-nav-item-img1 ${activeSection === "Settings" ? "active" : ""}`}
+          title="Settings"
+          aria-label="Settings"
           onClick={() => onNavigate("Settings")}
         >
           <span className="nav-icon-img1">⚙</span>

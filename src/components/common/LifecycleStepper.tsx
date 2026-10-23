@@ -17,11 +17,11 @@ export const LifecycleStepper: React.FC<Props> = ({ activeSection, onNavigateSta
     { num: "02", title: "Demonstrate", desc: "GUI observer records", section: "Teach a Task" },
     { num: "03", title: "Understand", desc: "AI infers & clarifies", section: "Teach a Task" },
     { num: "04", title: "Review", desc: "User tunes graph & steps", section: "My Workflows" },
-    { num: "05", title: "Save", desc: "Local version & hash", section: "My Workflows" },
+    { num: "05", title: "Save", desc: "Keep a workflow version", section: "My Workflows" },
     { num: "06", title: "Request", desc: "NL search & goal query", section: "My Workflows" },
     { num: "07", title: "Plan", desc: "Action & target preview", section: "Permissions" },
-    { num: "08", title: "Approve", desc: "Cryptographic sign-off", section: "Permissions" },
-    { num: "09", title: "Execute", desc: "Policy-enforced run", section: "Live Run" },
+    { num: "08", title: "Approve", desc: "Review and approve", section: "Permissions" },
+    { num: "09", title: "Run", desc: "Follow each step", section: "Live Run" },
     { num: "10", title: "Improve", desc: "Verifier & version diff", section: "Activity" },
   ];
 

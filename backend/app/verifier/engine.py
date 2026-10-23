@@ -37,7 +37,7 @@ class VerifierEngine:
             return False, f"URL '{current_url}' did not match expected pattern '{expected_value}'"
 
         elif cond_type in ["field_value_equals", "value_equals"]:
-            selector = condition.selector or (condition.target.test_id if condition.target else "") or ""
+            selector = condition.selector or (condition.target.test_id if condition.target else "") or (condition.target.css_fallback if condition.target else "") or ""
             target_key = selector or (condition.target.name if condition.target else "")
             
             # Look up in element_values
@@ -64,7 +64,7 @@ class VerifierEngine:
 
         elif cond_type in ["element_exists", "element_visible"]:
             elements_found = observed_state.get("elements_found", {})
-            selector = condition.selector or (condition.target.test_id if condition.target else "")
+            selector = condition.selector or (condition.target.test_id if condition.target else "") or (condition.target.css_fallback if condition.target else "") or (condition.target.name if condition.target else "")
             exists = elements_found.get(selector, False)
             if exists:
                 return True, f"Element '{selector}' is present and visible"

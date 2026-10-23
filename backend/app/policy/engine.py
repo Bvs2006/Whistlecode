@@ -43,16 +43,33 @@ class PolicyEngine:
             actions=actions_dict
         )
 
-    def is_origin_allowed(self, url: str, approval: Optional[ApprovalRecord] = None) -> bool:
+    def is_origin_allowed(
+        self,
+        url: str,
+        approval: Optional[ApprovalRecord] = None,
+        declared_origins: Optional[list[str]] = None,
+    ) -> bool:
         if not url:
             return True
         try:
             parsed = urlparse(url)
-            origin = f"{parsed.scheme}://{parsed.netloc}"
+            if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
+                return False
+            origin = f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
             
             # If approval record is present, origin must be within approved scope
             if approval:
                 return origin in approval.scope.allowed_origins
+
+            # Preview checks the exact scope the user is being asked to approve.
+            # This does not grant access; execution still requires a signed approval.
+            if declared_origins is not None:
+                normalized = set()
+                for declared in declared_origins:
+                    scoped = urlparse(declared)
+                    if scoped.scheme.lower() in {"http", "https"} and scoped.netloc and not scoped.username and not scoped.password:
+                        normalized.add(f"{scoped.scheme.lower()}://{scoped.netloc.lower()}")
+                return origin in normalized
             
             # Otherwise check system policy allowed origins
             return origin in self.config.allowed_origins
@@ -83,12 +100,39 @@ class PolicyEngine:
                 return kw
         return None
 
+    def evaluate_plugin_tool(self, plugin_id: str, tool: Any, approved: bool = False) -> Tuple[PolicyDecision, ReasonCode, RiskLevel]:
+        """Authorize only registered, implemented plugin tools with a backend grant."""
+        supported = {
+            ("plugin_http_webhook", "post_webhook"), ("plugin_http_webhook", "fetch_rest_api"),
+            ("plugin_data_export", "export_csv"), ("plugin_data_export", "export_json"),
+            ("plugin_desktop_notifier", "notify_user"),
+        }
+        if not tool or (plugin_id, tool.name) not in supported:
+            return PolicyDecision.DENY, ReasonCode.ACTION_TYPE_NOT_ALLOWED, RiskLevel.CRITICAL
+        if tool.risk_level == RiskLevel.CRITICAL:
+            return PolicyDecision.DENY, ReasonCode.CRITICAL_RISK_DENIED, RiskLevel.CRITICAL
+        if not approved:
+            return PolicyDecision.DENY, ReasonCode.APPROVAL_NOT_FOUND, tool.risk_level
+        intrinsic_risk = {
+            ("plugin_http_webhook", "post_webhook"): RiskLevel.HIGH,
+            ("plugin_http_webhook", "fetch_rest_api"): RiskLevel.LOW,
+            ("plugin_data_export", "export_csv"): RiskLevel.MEDIUM,
+            ("plugin_data_export", "export_json"): RiskLevel.MEDIUM,
+            ("plugin_desktop_notifier", "notify_user"): RiskLevel.MEDIUM,
+        }[(plugin_id, tool.name)]
+        rank = {RiskLevel.LOW: 0, RiskLevel.MEDIUM: 1, RiskLevel.HIGH: 2, RiskLevel.CRITICAL: 3}
+        effective_risk = tool.risk_level if rank[tool.risk_level] > rank[intrinsic_risk] else intrinsic_risk
+        if tool.requires_confirmation or effective_risk in (RiskLevel.HIGH, RiskLevel.MEDIUM) or tool.name in {"post_webhook", "export_csv", "export_json", "notify_user"}:
+            return PolicyDecision.REQUIRE_CONFIRMATION, ReasonCode.HIGH_RISK_CONFIRMATION_REQUIRED, effective_risk
+        return PolicyDecision.ALLOW, ReasonCode.ALLOWED_WITHIN_SCOPE, effective_risk
+
     def evaluate_step(
         self,
         step: Step,
         current_url: str,
         approval: Optional[ApprovalRecord] = None,
-        actions_executed_count: int = 0
+        actions_executed_count: int = 0,
+        declared_origins: Optional[list[str]] = None,
     ) -> Tuple[PolicyDecision, ReasonCode, RiskLevel]:
         """
         Pure function: evaluates policy, approval, action, and context.
@@ -113,7 +157,7 @@ class PolicyEngine:
         if step.action == ActionType.NAVIGATE:
             url_to_check = step.args.get("url", current_url)
 
-        if url_to_check and not self.is_origin_allowed(url_to_check, approval):
+        if url_to_check and not self.is_origin_allowed(url_to_check, approval, declared_origins):
             return PolicyDecision.DENY, ReasonCode.UNAPPROVED_ORIGIN, RiskLevel.HIGH
 
         # 4. Check approval scope if approval record provided
@@ -132,6 +176,20 @@ class PolicyEngine:
         # 6. Explicit confirmation gates or high-risk actions
         if step.action == ActionType.CONFIRM_GATE:
             return PolicyDecision.REQUIRE_CONFIRMATION, ReasonCode.GATED_STEP_CONFIRMATION_REQUIRED, RiskLevel.HIGH
+
+        # External or destructive effects always need a live user confirmation,
+        # even when the workflow itself has a valid standing approval.
+        sensitive_effect = (step.action == ActionType.SUBMIT) or (
+            step.action == ActionType.CLICK
+            and any(term in " ".join([
+                step.name or "",
+                (step.target.name or "") if step.target else "",
+                (step.target.label or "") if step.target else "",
+                (step.target.text or "") if step.target else "",
+            ]).lower() for term in ("delete", "remove", "send", "publish", "purchase", "pay", "invite", "transfer"))
+        )
+        if sensitive_effect:
+            return PolicyDecision.REQUIRE_CONFIRMATION, ReasonCode.HIGH_RISK_CONFIRMATION_REQUIRED, RiskLevel.HIGH
 
         if step.requires_confirmation or rule.decision == PolicyDecision.REQUIRE_CONFIRMATION:
             return PolicyDecision.REQUIRE_CONFIRMATION, ReasonCode.HIGH_RISK_CONFIRMATION_REQUIRED, RiskLevel.HIGH

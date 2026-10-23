@@ -8,7 +8,8 @@ DB_PATH = Path(__file__).parent.parent.parent / "whistlecode.db"
 
 
 def get_db_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = sqlite3.connect(str(DB_PATH), timeout=10)
+    conn.execute("PRAGMA busy_timeout = 10000")
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -112,6 +113,19 @@ def init_db():
         details_json TEXT,
         prev_hash TEXT NOT NULL,
         entry_hash TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS plugin_tool_grants (
+        approval_id TEXT PRIMARY KEY,
+        expires_at TEXT NOT NULL,
+        consumed_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS sandbox_plan_grants (
+        grant_id TEXT PRIMARY KEY,
+        plan_hash TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        consumed_at TEXT
     );
     """)
 

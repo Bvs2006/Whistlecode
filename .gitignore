@@ -1,0 +1,8 @@
+backend/approval_signing.key
+backend/whistlecode-test.db
+backend/whistlecode.db
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+node_modules/
+*.tsbuildinfo

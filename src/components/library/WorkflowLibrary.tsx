@@ -51,12 +51,12 @@ export const WorkflowLibrary: React.FC<Props> = ({
         <div>
           <h2>Reusable Workflow Library</h2>
           <p className="subtitle">
-            Workflows, variables, permissions, and immutable versions stored locally. Search using plain English natural language.
+            Workflows, inputs, permissions, and saved versions. Search using a task name or description.
           </p>
         </div>
         <div className="status-pill live">
           <span className="dot" />
-          Local SQLite Persistence Active
+          Workflows saved
         </div>
       </div>
 
@@ -105,7 +105,7 @@ export const WorkflowLibrary: React.FC<Props> = ({
       {/* SEARCH RESULTS / WORKFLOW CARDS */}
       <div className="library-results-grid">
         {loading ? (
-          <div className="loading-state">Searching local workflow catalog...</div>
+          <div className="loading-state">Searching saved workflows…</div>
         ) : results.length === 0 ? (
           <div className="empty-state">
             No workflows matched your search query. Try typing a different description or keyword.
@@ -151,7 +151,7 @@ export const WorkflowLibrary: React.FC<Props> = ({
                 </div>
 
                 <div className="meta-chip-group">
-                  <span className="chip-label">Origins ({wf.allowed_origins?.length || 0}):</span>
+                  <span className="chip-label">Websites ({wf.allowed_origins?.length || 0}):</span>
                   {wf.allowed_origins?.map((o: string) => (
                     <span key={o} className="pill pill-origin">
                       {o}
@@ -160,9 +160,9 @@ export const WorkflowLibrary: React.FC<Props> = ({
                 </div>
 
                 <div className="meta-chip-group">
-                  <span className="chip-label">Hash:</span>
+                  <span className="chip-label">Version:</span>
                   <code className="hash-code-sm">
-                    {wf.content_hash ? wf.content_hash.slice(0, 16) + "..." : "Local Draft"}
+                    {`v${wf.version}`}
                   </code>
                 </div>
               </div>

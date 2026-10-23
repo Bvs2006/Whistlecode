@@ -1,6 +1,8 @@
 from __future__ import annotations
 import uuid
 import datetime
+import re
+from urllib.parse import urlparse
 from typing import Optional, Dict, Any, List
 from ..models.workflow import WorkflowDefinition
 from ..models.approval import ApprovalRecord, ApprovalScope
@@ -15,6 +17,13 @@ class ApprovalService:
     """
 
     @staticmethod
+    def _origin(value: str) -> str:
+        parsed = urlparse(value)
+        if not parsed.scheme or not parsed.netloc or parsed.username or parsed.password:
+            raise ValueError(f"Invalid approval origin: {value}")
+        return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
+
+    @staticmethod
     def create_approval(
         workflow: WorkflowDefinition,
         allowed_origins: Optional[List[str]] = None,
@@ -25,16 +34,35 @@ class ApprovalService:
         content_hash = workflow.compute_hash()
         
         # Actions present in workflow
-        wf_actions = list({step.action.value for step in workflow.steps if step.enabled})
-        wf_origins = allowed_origins or workflow.allowed_origins
+        if not any(step.enabled for step in workflow.steps):
+            raise ValueError("Approval requires at least one enabled workflow step")
+        if duration_days < 1 or duration_days > 365:
+            raise ValueError("Approval duration must be between 1 and 365 days")
+        wf_actions = sorted({step.action.value for step in workflow.steps if step.enabled})
+        requested_origins = workflow.allowed_origins if allowed_origins is None else allowed_origins
+        approved_origins = [ApprovalService._origin(origin) for origin in requested_origins]
+        workflow_origins = {ApprovalService._origin(origin) for origin in workflow.allowed_origins}
+        if not set(approved_origins).issubset(workflow_origins):
+            raise ValueError("Approval scope cannot include origins outside the workflow's declared scope")
+        approved_actions = sorted(set(wf_actions if allowed_action_types is None else allowed_action_types))
+        if not set(approved_actions).issubset(set(wf_actions)):
+            raise ValueError("Approval scope cannot include actions outside the validated plan")
 
         now = datetime.datetime.now(datetime.timezone.utc)
         expires_at = (now + datetime.timedelta(days=duration_days)).isoformat()
         
         scope = ApprovalScope(
-            allowed_origins=wf_origins,
-            allowed_action_types=allowed_action_types or wf_actions,
-            parameter_constraints={p.name: {"type": p.type, "required": p.required} for p in workflow.parameters}
+            allowed_origins=approved_origins,
+            allowed_action_types=approved_actions,
+            parameter_constraints={
+                p.name: {
+                    "type": p.type,
+                    "required": p.required,
+                    "max_length": p.max_length,
+                    "regex_pattern": p.regex_pattern,
+                }
+                for p in workflow.parameters
+            }
         )
 
         approval = ApprovalRecord(
@@ -77,7 +105,11 @@ class ApprovalService:
         return approval
 
     @staticmethod
-    def verify_approval_for_run(workflow: WorkflowDefinition, approval_id: str) -> tuple[bool, ReasonCode, Optional[ApprovalRecord]]:
+    def verify_approval_for_run(
+        workflow: WorkflowDefinition,
+        approval_id: str,
+        parameters: Optional[Dict[str, Any]] = None,
+    ) -> tuple[bool, ReasonCode, Optional[ApprovalRecord]]:
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM approvals WHERE id = ?", (approval_id,))
@@ -110,7 +142,10 @@ class ApprovalService:
 
         # Check expiration
         now = datetime.datetime.now(datetime.timezone.utc)
-        expires_at_dt = datetime.datetime.fromisoformat(approval.expires_at)
+        try:
+            expires_at_dt = datetime.datetime.fromisoformat(approval.expires_at)
+        except (TypeError, ValueError):
+            return False, ReasonCode.APPROVAL_EXPIRED, approval
         if now > expires_at_dt:
             return False, ReasonCode.APPROVAL_EXPIRED, approval
 
@@ -119,15 +154,44 @@ class ApprovalService:
         if approval.version_hash != current_hash:
             return False, ReasonCode.APPROVAL_HASH_MISMATCH, approval
 
+        if approval.workflow_id != workflow.workflow_id or approval.version != workflow.version:
+            return False, ReasonCode.APPROVAL_HASH_MISMATCH, approval
+
+        if parameters is not None:
+            constraints = approval.scope.parameter_constraints
+            workflow_parameters = {definition.name: definition for definition in workflow.parameters}
+            if not set(parameters).issubset(constraints):
+                return False, ReasonCode.APPROVAL_SCOPE_MISMATCH, approval
+            for name, constraint in constraints.items():
+                value_present = name in parameters
+                definition = workflow_parameters.get(name)
+                if not value_present and constraint.get("required") and (definition is None or definition.default_value is None):
+                    return False, ReasonCode.APPROVAL_SCOPE_MISMATCH, approval
+                if not value_present:
+                    continue
+                value = parameters[name]
+                expected_type = constraint.get("type", "string")
+                type_valid = (
+                    isinstance(value, str) if expected_type == "string" else
+                    (isinstance(value, (int, float)) and not isinstance(value, bool)) if expected_type == "number" else
+                    isinstance(value, bool) if expected_type == "boolean" else False
+                )
+                if not type_valid:
+                    return False, ReasonCode.APPROVAL_SCOPE_MISMATCH, approval
+                max_length = constraint.get("max_length")
+                if max_length is not None and isinstance(value, str) and len(value) > max_length:
+                    return False, ReasonCode.APPROVAL_SCOPE_MISMATCH, approval
+                pattern = constraint.get("regex_pattern")
+                if pattern and isinstance(value, str) and re.fullmatch(pattern, value) is None:
+                    return False, ReasonCode.APPROVAL_SCOPE_MISMATCH, approval
+
         return True, ReasonCode.ALLOWED_WITHIN_SCOPE, approval
 
     @staticmethod
     def revoke_approval(approval_id: str) -> bool:
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("UPDATE approvals SET revoked_at = ? WHERE id = ?", (now, approval_id))
-        affected = cursor.rowcount > 0
-        conn.commit()
-        conn.close()
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE approvals SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL", (now, approval_id))
+            affected = cursor.rowcount > 0
         return affected

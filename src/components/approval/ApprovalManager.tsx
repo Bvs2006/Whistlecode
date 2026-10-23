@@ -51,9 +51,9 @@ export const ApprovalManager: React.FC<Props> = ({
     <div className="card-panel">
       <div className="panel-header-row">
         <div>
-          <h2>Approval & Scope Authorization (APR)</h2>
+          <h2>Approval and permissions</h2>
           <p className="subtitle">
-            A demonstration is not blanket permission. Approval binds cryptographically to this exact workflow content hash and origin scope.
+            Approval applies only to this workflow version and the websites listed below.
           </p>
         </div>
         <div className={`status-pill ${activeApproval ? "live" : "idle"}`}>
@@ -66,7 +66,7 @@ export const ApprovalManager: React.FC<Props> = ({
 
       {/* PLAIN LANGUAGE SCOPE SUMMARY (APR-5) */}
       <div className="scope-box">
-        <h3>Plain-Language Permission Scope (APR-5)</h3>
+        <h3>What this workflow can do</h3>
         <p>Review what this automation will be allowed to do when running:</p>
 
         <ul className="scope-list">
@@ -74,11 +74,10 @@ export const ApprovalManager: React.FC<Props> = ({
             <strong>Target Workflow:</strong> <code>{workflow.title}</code> (v{workflow.version})
           </li>
           <li>
-            <strong>Pinned Content Hash:</strong>{" "}
-            <code className="hash-code">{workflow.content_hash || workflow.workflow_id}</code>
+            <strong>Plan version:</strong> v{workflow.version}
           </li>
           <li>
-            <strong>Allowed Origins:</strong>{" "}
+            <strong>Allowed websites:</strong>{" "}
             {workflow.allowed_origins.map((o) => (
               <span key={o} className="pill pill-origin">{o}</span>
             ))}
@@ -121,19 +120,19 @@ export const ApprovalManager: React.FC<Props> = ({
               onClick={handleApprove}
               disabled={loading}
             >
-              ✓ Approve Version {workflow.version} ({workflow.content_hash.slice(0, 12)}...)
+              ✓ Approve version {workflow.version}
             </button>
           </div>
         </div>
       ) : (
         <div className="approved-certificate-card">
           <div className="cert-header">
-            <h4>Cryptographically Signed Approval Record</h4>
+            <h4>Approval record</h4>
             <span className="badge-success">ACTIVE & VALID</span>
           </div>
           <div className="cert-details">
             <div>
-              <span>Approval ID:</span> <code>{activeApproval.id}</code>
+              <span>Approval:</span> <strong>Version {activeApproval.version}</strong>
             </div>
             <div>
               <span>Approver:</span> <strong>{activeApproval.approver}</strong>
@@ -142,8 +141,7 @@ export const ApprovalManager: React.FC<Props> = ({
               <span>Expires At:</span> <strong>{new Date(activeApproval.expires_at).toLocaleString()}</strong>
             </div>
             <div>
-              <span>HMAC-SHA256 Signature:</span>{" "}
-              <code className="hash-code">{activeApproval.signature}</code>
+              <span>Status:</span> <strong>Active for this version</strong>
             </div>
           </div>
 

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import type { WorkflowDefinition, Step, ActionType, RiskLevel } from "../../types";
 
 type Props = {
@@ -15,6 +15,12 @@ export const WorkflowGraph: React.FC<Props> = ({
   const [selectedStepId, setSelectedStepId] = useState<string | null>(
     workflow.steps.length > 0 ? workflow.steps[0].id : null
   );
+  const [argsText, setArgsText] = useState("{}");
+  const [argsError, setArgsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSelectedStepId(workflow.steps[0]?.id || null);
+  }, [workflow.workflow_id, workflow.steps.length]);
 
   const selectedStep = workflow.steps.find((s) => s.id === selectedStepId);
   const selectedIndex = workflow.steps.findIndex((s) => s.id === selectedStepId);
@@ -27,7 +33,7 @@ export const WorkflowGraph: React.FC<Props> = ({
   };
 
   const handleAddStep = () => {
-    const newId = `s${workflow.steps.length + 1}`;
+    const newId = `s_${crypto.randomUUID().slice(0, 8)}`;
     const newStep: Step = {
       id: newId,
       name: `Step ${workflow.steps.length + 1}: Click Element`,
@@ -43,12 +49,15 @@ export const WorkflowGraph: React.FC<Props> = ({
       next_step_id: undefined,
     };
     const newSteps = [...workflow.steps, newStep];
-    if (newSteps.length > 1) {
-      newSteps[newSteps.length - 2].next_step_id = newId;
-    }
+    if (newSteps.length > 1) newSteps[newSteps.length - 2] = { ...newSteps[newSteps.length - 2], next_step_id: newId };
     onWorkflowChange({ ...workflow, steps: newSteps });
     setSelectedStepId(newId);
   };
+
+  useEffect(() => {
+    setArgsText(JSON.stringify(selectedStep?.args || {}, null, 2));
+    setArgsError(null);
+  }, [selectedStepId, workflow.workflow_id]);
 
   const handleDeleteStep = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -77,12 +86,11 @@ export const WorkflowGraph: React.FC<Props> = ({
     <div className="workflow-graph-wrapper">
       <div className="graph-toolbar">
         <div className="graph-meta">
-          <span className="badge-pill">Editable Graph Mode</span>
-          <span>Nodes: <strong>{workflow.steps.length}</strong></span>
-          <span>Hash: <code>{workflow.content_hash ? workflow.content_hash.slice(0, 14) + "..." : "Draft"}</code></span>
+          <span className="badge-pill">Workflow steps</span>
+          <span>Steps: <strong>{workflow.steps.length}</strong></span>
         </div>
         <button className="btn btn-secondary btn-sm" onClick={handleAddStep}>
-          + Add Node
+          + Add step
         </button>
       </div>
 
@@ -95,7 +103,7 @@ export const WorkflowGraph: React.FC<Props> = ({
               <div className="node-icon">▶</div>
               <div className="node-info">
                 <strong>START</strong>
-                <small>{workflow.allowed_origins[0] || "Isolated Context"}</small>
+                <small>{workflow.allowed_origins[0] || "No website selected"}</small>
               </div>
             </div>
 
@@ -141,7 +149,7 @@ export const WorkflowGraph: React.FC<Props> = ({
 
                     {step.requires_confirmation && (
                       <div className="node-gate-tag">
-                        🛡 Policy Confirmation Gate
+                        🛡 Pauses for your confirmation
                       </div>
                     )}
 
@@ -268,14 +276,23 @@ export const WorkflowGraph: React.FC<Props> = ({
                 <label>Arguments (JSON / Parameters)</label>
                 <textarea
                   rows={3}
-                  value={JSON.stringify(selectedStep.args, null, 2)}
+                  value={argsText}
                   onChange={(e) => {
+                    setArgsText(e.target.value);
+                    setArgsError(null);
+                  }}
+                  onBlur={() => {
                     try {
-                      const parsed = JSON.parse(e.target.value);
+                      const parsed = JSON.parse(argsText);
+                      if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") throw new Error("Arguments must be a JSON object.");
                       handleUpdateSelected({ args: parsed });
-                    } catch {}
+                      setArgsError(null);
+                    } catch {
+                      setArgsError("Enter a valid JSON object before leaving this field.");
+                    }
                   }}
                 />
+                {argsError && <small className="field-hint" role="alert">{argsError}</small>}
               </div>
 
               <div className="form-group">
@@ -295,7 +312,7 @@ export const WorkflowGraph: React.FC<Props> = ({
                     checked={selectedStep.requires_confirmation}
                     onChange={(e) => handleUpdateSelected({ requires_confirmation: e.target.checked })}
                   />
-                  <span>Enforce Explicit Policy Confirmation Gate</span>
+                  <span>Pause here for my confirmation</span>
                 </label>
               </div>
 

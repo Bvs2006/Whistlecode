@@ -44,47 +44,40 @@ class AuditLogger:
 
         conn = get_db_connection()
         cursor = conn.cursor()
+        try:
+            # Serialize writers so concurrent events cannot fork the hash chain.
+            cursor.execute("BEGIN IMMEDIATE")
+            cursor.execute("SELECT entry_hash FROM audit_log ORDER BY id DESC LIMIT 1")
+            last_row = cursor.fetchone()
+            prev_hash = last_row["entry_hash"] if last_row else cls.GENESIS_HASH
+            cursor.execute("SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM audit_log")
+            next_id = cursor.fetchone()["next_id"]
 
-        # Get last entry hash for chaining
-        cursor.execute("SELECT entry_hash FROM audit_log ORDER BY id DESC LIMIT 1")
-        last_row = cursor.fetchone()
-        prev_hash = last_row["entry_hash"] if last_row else cls.GENESIS_HASH
-
-        cursor.execute("SELECT COUNT(*) as count FROM audit_log")
-        next_id = (cursor.fetchone()["count"] or 0) + 1
-
-        entry = AuditEntry(
-            id=next_id,
-            timestamp=now,
-            actor=actor,
-            event_type=event_type,
-            workflow_id=workflow_id,
-            version_hash=version_hash,
-            ref_ids=clean_ref_ids,
-            details=clean_details,
-            prev_hash=prev_hash
-        )
-        entry.entry_hash = entry.compute_hash()
-
-        cursor.execute(
-            """
-            INSERT INTO audit_log (ts, actor, event_type, workflow_id, version_hash, ref_ids_json, details_json, prev_hash, entry_hash)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                entry.timestamp,
-                entry.actor,
-                entry.event_type,
-                entry.workflow_id,
-                entry.version_hash,
-                json.dumps(entry.ref_ids),
-                json.dumps(entry.details),
-                entry.prev_hash,
-                entry.entry_hash
+            entry = AuditEntry(
+                id=next_id,
+                timestamp=now,
+                actor=actor,
+                event_type=event_type,
+                workflow_id=workflow_id,
+                version_hash=version_hash,
+                ref_ids=clean_ref_ids,
+                details=clean_details,
+                prev_hash=prev_hash
             )
-        )
-        conn.commit()
-        conn.close()
+            entry.entry_hash = entry.compute_hash()
+            cursor.execute(
+                """INSERT INTO audit_log (ts, actor, event_type, workflow_id, version_hash, ref_ids_json, details_json, prev_hash, entry_hash)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (entry.timestamp, entry.actor, entry.event_type, entry.workflow_id,
+                 entry.version_hash, json.dumps(entry.ref_ids), json.dumps(entry.details),
+                 entry.prev_hash, entry.entry_hash)
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
         return entry
 

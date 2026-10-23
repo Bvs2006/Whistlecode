@@ -7,6 +7,7 @@ from backend.app.generation.ai_provider import (
     PromptInjectionDetectedError,
     WorkflowGenerationError,
     MAX_OUTPUT_SIZE_BYTES,
+    OllamaAIWorkflowProvider,
 )
 
 
@@ -103,3 +104,58 @@ async def test_empty_observations_rejected():
     provider = MockAIWorkflowProvider()
     with pytest.raises(WorkflowGenerationError):
         await provider.generate_workflow_proposal([], "Goal")
+
+
+@pytest.mark.asyncio
+async def test_goal_plan_requests_website_scope_before_drafting():
+    result = await OllamaAIWorkflowProvider().generate_goal_plan("Search Wikipedia for a topic")
+
+    assert result.status == "clarification_needed"
+    assert result.workflow is None
+    assert result.clarifications[0].id == "clarify_website_scope"
+    assert "exact website" in result.clarifications[0].question.lower()
+
+
+@pytest.mark.asyncio
+async def test_goal_plan_opens_only_the_explicit_website_without_model_guesswork():
+    result = await OllamaAIWorkflowProvider().generate_goal_plan(
+        "At https://example.com, open the homepage."
+    )
+
+    assert result.status == "success"
+    assert result.workflow is not None
+    assert result.workflow.allowed_origins == ["https://example.com"]
+    assert len(result.workflow.steps) == 1
+    assert result.workflow.steps[0].action.value == "navigate"
+    assert result.workflow.steps[0].args == {"url": "https://example.com"}
+
+
+@pytest.mark.asyncio
+async def test_revision_keeps_existing_scope_and_parameters():
+    class OfflineRevisionProvider(OllamaAIWorkflowProvider):
+        async def _propose(self, observations, task_goal, allowed_origins, allow_goal_only):
+            proposal = await MockAIWorkflowProvider.generate_workflow_proposal(
+                self, observations, task_goal
+            )
+            proposal.workflow.allowed_origins = list(allowed_origins)
+            return proposal
+
+    original = await MockAIWorkflowProvider().generate_workflow_proposal(
+        [{"action": "click", "url": "https://example.com", "target": "Save", "role": "button"}],
+        "Save the record",
+    )
+    current = original.workflow
+    current.workflow_id = "wf_current"
+    current.version = 3
+    current.allowed_origins = ["https://example.com"]
+    current.update_hash()
+    provider = OfflineRevisionProvider()
+
+    result = await provider.revise_workflow(current, "Add a check before saving")
+
+    assert result.workflow.workflow_id == "wf_current"
+    assert result.workflow.version == 4
+    assert result.workflow.parent_version == 3
+    assert result.workflow.allowed_origins == ["https://example.com"]
+    assert result.workflow.parameters == current.parameters
+    assert result.workflow.change_summary == "Add a check before saving"

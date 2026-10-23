@@ -10,17 +10,17 @@ const sectionCopy: Record<string, string> = {
   "My Workflows":
     "Inspect, edit, and version your synthesized workflows.",
   "Approval & Scope":
-    "Cryptographic authorization and origin allowlists.",
+    "Review which websites and actions each workflow may use.",
   "Run Monitor":
-    "Execute and monitor deterministic runs with safety gates.",
+    "Follow each run and confirm sensitive actions.",
   "Activity & Audit":
-    "Inspect the tamper-evident hash-chained audit log.",
-  "Test Site Sandbox":
-    "Interactive local test site benchmark.",
+    "Review past approvals and workflow activity.",
+    "Test Site Sandbox":
+    "Try a workflow in a protected sample space.",
   Activity:
     "Activity history will appear here.",
   Settings:
-    "Local-first settings and policy configuration.",
+    "Manage your workspace preferences.",
 };
 
 export function SectionPlaceholder({ section }: SectionPlaceholderProps) {

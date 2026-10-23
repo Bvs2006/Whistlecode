@@ -50,7 +50,7 @@ export const ManusDashboard: React.FC<Props> = ({
     {
       id: "sug_ticket",
       title: "Consequential Support Ticket",
-      subtitle: "High-risk submission requiring policy confirmation gate & cryptographic approval",
+      subtitle: "A sensitive step pauses for your review before it runs.",
       icon: "🛡️",
       color: "#ef4444",
       action: () => onNavigate("Approval & Scope"),
@@ -68,7 +68,7 @@ export const ManusDashboard: React.FC<Props> = ({
       <div className="manus-command-card">
         <div className="command-card-top-chips">
           <span className="manus-top-chip active">
-            ☁ Local Deterministic Engine
+            ☁ Ready for review
           </span>
           <span className="manus-top-chip">
             📁 Default Workspace
@@ -171,7 +171,7 @@ export const ManusDashboard: React.FC<Props> = ({
               <h4>
                 Advanced Automation <span className="beta-tag">Beta</span>
               </h4>
-              <p>Editable workflow graph, condition branching & policy engine</p>
+              <p>Edit steps and conditions, then review permissions.</p>
             </div>
           </div>
         </div>

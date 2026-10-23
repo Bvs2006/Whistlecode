@@ -8,15 +8,12 @@ type Props = {
 };
 
 export const RecordingStudio: React.FC<Props> = ({ onWorkflowGenerated }) => {
-  const [targetUrl, setTargetUrl] = useState("http://localhost:8000/testsite#restaurants");
-  const [taskDesc, setTaskDesc] = useState("Choose best restaurant and make reservation");
+  const [targetUrl, setTargetUrl] = useState("");
+  const [taskDesc, setTaskDesc] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [currentSession, setCurrentSession] = useState<RecordingSession | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Active desktop window info
-  const [activeWindow, setActiveWindow] = useState<{ window_title?: string; process_name?: string }>({});
 
   // Capture Permissions
   const [captureScreenshots, setCaptureScreenshots] = useState(true);
@@ -40,10 +37,6 @@ export const RecordingStudio: React.FC<Props> = ({ onWorkflowGenerated }) => {
           if (res.session) {
             setCurrentSession(res.session);
           }
-          const win = await api.getDesktopActiveWindow();
-          if (win) {
-            setActiveWindow(win);
-          }
         } catch (e) {
           console.error(e);
         }
@@ -53,10 +46,19 @@ export const RecordingStudio: React.FC<Props> = ({ onWorkflowGenerated }) => {
   }, [isRecording]);
 
   const handleStart = async () => {
+    const trimmedUrl = targetUrl.trim();
+    if (!/^https?:\/\//i.test(trimmedUrl)) {
+      setError("Enter a complete website address beginning with https:// or http://.");
+      return;
+    }
+    if (!taskDesc.trim()) {
+      setError("Describe the task you are about to demonstrate.");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const res = await api.startRecording(targetUrl, taskDesc, captureScreenshots);
+      const res = await api.startRecording(trimmedUrl, taskDesc.trim(), captureScreenshots, captureClicks, captureKeyboard);
       setIsRecording(true);
       setCurrentSession(res.session);
     } catch (err: any) {
@@ -137,28 +139,34 @@ export const RecordingStudio: React.FC<Props> = ({ onWorkflowGenerated }) => {
     <div className="card-panel">
       <div className="panel-header-row">
         <div>
-          <h2>Desktop & Browser Observer (SUGILITE MVP)</h2>
+          <h2>Teach a task</h2>
           <p className="subtitle">
-            Observes permitted mouse clicks, keyboard actions, active application/window, screenshots, and accessible UI elements.
+            Record a real task on the website you choose. WhistleCode captures the browser actions and turns them into an editable workflow for you to review.
           </p>
         </div>
         <div className={`status-pill ${isRecording ? "live" : "idle"}`}>
           <span className="dot" />
-          {isRecording ? "Observer Active" : "Observer Idle"}
+          {isRecording ? "Recording · browser window open" : currentSession?.status === "stopped" ? "Ready to review" : "Ready to record"}
         </div>
       </div>
+
+      <ol className="recording-guide" aria-label="How to record a task">
+        <li><span>1</span><div><strong>Choose a real website</strong><small>Enter the page where the task starts and describe the result you want.</small></div></li>
+        <li><span>2</span><div><strong>Record your task</strong><small>Use the separate browser window to perform the task, then return here and stop recording.</small></div></li>
+        <li><span>3</span><div><strong>Review before running</strong><small>Inspect the captured steps, edit the workflow, then approve its website scope and permissions.</small></div></li>
+      </ol>
 
       {error && <div className="error-banner">⚠️ {error}</div>}
 
       {/* ACTIVE OBSERVER METADATA BANNER */}
       <div className="observer-scope-banner">
         <div className="banner-item">
-          <span className="label">Active App:</span>
-          <strong>{activeWindow.process_name || "Chromium Sandbox"}</strong>
+          <span className="label">Website scope:</span>
+          <strong>{currentSession?.target_url || targetUrl || "Choose a website above"}</strong>
         </div>
         <div className="banner-item">
-          <span className="label">Window Title:</span>
-          <span>{activeWindow.window_title || "WhistleCode Benchmark Site"}</span>
+          <span className="label">Captured steps:</span>
+          <span>{currentSession?.events?.length || 0}{isRecording ? " · updating live" : ""}</span>
         </div>
         <div className="banner-item">
           <span className="label">Capture Permissions:</span>
@@ -170,16 +178,17 @@ export const RecordingStudio: React.FC<Props> = ({ onWorkflowGenerated }) => {
 
       <div className="recording-form-grid">
         <div className="input-group">
-          <label>Target URL / Application Scope</label>
+            <label>Website where the task starts</label>
           <input
             type="text"
             value={targetUrl}
+            placeholder="https://your-website.com"
             onChange={(e) => setTargetUrl(e.target.value)}
             disabled={isRecording}
           />
         </div>
         <div className="input-group">
-          <label>Demonstration Goal / Task Description</label>
+            <label>What should the workflow do?</label>
           <input
             type="text"
             value={taskDesc}
@@ -227,7 +236,7 @@ export const RecordingStudio: React.FC<Props> = ({ onWorkflowGenerated }) => {
             onClick={handleStart}
             disabled={loading}
           >
-            ● Launch Observer & Demonstrate Task
+            <span aria-hidden="true">⏺</span> Record this task
           </button>
         ) : (
           <button
@@ -235,7 +244,7 @@ export const RecordingStudio: React.FC<Props> = ({ onWorkflowGenerated }) => {
             onClick={handleStop}
             disabled={loading}
           >
-            ■ Finish & Stop Observer
+            <span aria-hidden="true">■</span> Stop recording
           </button>
         )}
 
@@ -245,7 +254,7 @@ export const RecordingStudio: React.FC<Props> = ({ onWorkflowGenerated }) => {
             onClick={handleDirectSynthesize}
             disabled={loading}
           >
-            ✦ Synthesize Workflow with Clarification Dialogue ({currentSession.events.length} Events)
+            ✦ Review {currentSession.events.length} captured steps
           </button>
         )}
       </div>
@@ -254,16 +263,16 @@ export const RecordingStudio: React.FC<Props> = ({ onWorkflowGenerated }) => {
       <div className="events-stream-card">
         <div className="events-card-header">
           <div>
-            <h3>Captured Input Events & UI Elements ({currentSession?.events?.length || 0})</h3>
+            <h3>Captured website actions ({currentSession?.events?.length || 0})</h3>
             <p className="field-hint">
-              Captures accessible role, accessible name, test ID, bounding boxes, and visual screenshots.
+          These are the actions captured on the selected website. Sensitive values are masked or left out of the workflow draft.
             </p>
           </div>
         </div>
 
         {(!currentSession || currentSession.events.length === 0) ? (
           <div className="empty-state">
-            No demonstration events recorded yet. Click "Launch Observer & Demonstrate Task" to begin.
+          No website actions yet. Enter a real website and task above, then start recording.
           </div>
         ) : (
           <div className="events-table-wrapper">
@@ -329,10 +338,7 @@ export const RecordingStudio: React.FC<Props> = ({ onWorkflowGenerated }) => {
         <ClarificationModal
           clarifications={clarifications}
           onConfirm={handleClarificationConfirm}
-          onCancel={() => {
-            setShowClarificationModal(false);
-            handleDirectSynthesize();
-          }}
+          onCancel={() => setShowClarificationModal(false)}
           loading={loading}
         />
       )}

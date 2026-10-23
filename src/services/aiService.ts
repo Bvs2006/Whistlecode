@@ -1,10 +1,7 @@
 import type { WorkflowDefinition, ClarificationQuestion, RiskLevel } from "../types";
+import { api } from "../api/client";
 
-export type MessageType =
-  | "answer_only"
-  | "action_proposal"
-  | "clarification_request"
-  | "system_notice";
+export type MessageType = "answer_only" | "action_proposal" | "clarification_request" | "system_notice";
 
 export type ConversationMessage = {
   id: string;
@@ -22,306 +19,124 @@ export type ConversationMessage = {
   };
 };
 
-export type ConversationPhase =
-  | "idle"
-  | "understanding_request"
-  | "asking_question"
-  | "preparing_plan"
-  | "ready_for_approval";
+export type ConversationPhase = "idle" | "understanding_request" | "streaming_response" | "asking_question" | "preparing_plan" | "ready_for_approval";
 
 export interface AIServiceContext {
   savedWorkflows: WorkflowDefinition[];
   history: ConversationMessage[];
+  activeWorkflow?: WorkflowDefinition;
+  skipWorkflowSearch?: boolean;
   signal?: AbortSignal;
 }
 
 export interface AIService {
   processGoal(goal: string, context: AIServiceContext): Promise<ConversationMessage>;
-  resolveClarification(
-    questionId: string,
-    answer: string,
-    context: AIServiceContext
-  ): Promise<ConversationMessage>;
+  resolveClarification(questionId: string, answer: string, context: AIServiceContext): Promise<ConversationMessage>;
 }
 
-export class MockAIService implements AIService {
-  private delay(ms: number, signal?: AbortSignal): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (signal?.aborted) {
-        return reject(new DOMException("Aborted", "AbortError"));
-      }
-      const timeout = setTimeout(() => {
-        resolve();
-      }, ms);
-      if (signal) {
-        signal.addEventListener("abort", () => {
-          clearTimeout(timeout);
-          reject(new DOMException("Aborted", "AbortError"));
-        });
-      }
-    });
-  }
+const workflowRisk = (workflow: WorkflowDefinition): RiskLevel => {
+  const risks = workflow.steps.filter((step) => step.enabled).map((step) => step.risk);
+  if (risks.includes("critical")) return "critical";
+  if (risks.includes("high")) return "high";
+  if (risks.includes("medium")) return "medium";
+  return "low";
+};
 
+class WorkflowAssistantService implements AIService {
   async processGoal(goal: string, context: AIServiceContext): Promise<ConversationMessage> {
     const trimmed = goal.trim();
-    if (!trimmed) {
-      throw new Error("Goal cannot be empty.");
-    }
-
-    // Simulate understanding delay with abort signal support
-    await this.delay(400, context.signal);
-
+    if (!trimmed) throw new Error("Enter a task to continue.");
     const lower = trimmed.toLowerCase();
-
-    // 1. INFORMATIONAL QUERY (Answering only — NO computer actions proposed)
-    const isInfoQuery =
-      lower.includes("what can you do") ||
-      lower.includes("how do you work") ||
-      lower.includes("what is safe mode") ||
-      lower.includes("explain policy") ||
-      lower.includes("who are you") ||
-      lower.startsWith("help");
-
-    if (isInfoQuery) {
+    if (["what can you do", "how do you work", "who are you", "explain permissions", "how do approvals work", "how do workflow approvals work", "help"].some((phrase) => lower.includes(phrase))) {
       return {
-        id: `msg_ai_${Date.now().toString(36)}`,
+        id: `msg_info_${Date.now().toString(36)}`,
         sender: "ai",
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         type: "answer_only",
-        text:
-          "I am WhistleCode, your desktop workflow learning agent. I observe user demonstrations, synthesize reusable workflows, enforce strict zero-LLM security policies, and require explicit approval before performing any consequential actions.\n\n" +
-          "ℹ️ Informational response: No computer actions or file changes were proposed or executed.",
+        text: "WhistleCode turns task descriptions and reviewed demonstrations into editable workflows. You can inspect each step, limit where it may run, approve sensitive actions, and review the activity history. No actions were proposed or run for this question.",
       };
     }
-
-    // 2. CHECK IF GOAL MATCHES A SAVED WORKFLOW
-    const matched = context.savedWorkflows.find((wf) => {
-      const titleLower = wf.title.toLowerCase();
-      const intentLower = wf.intent.toLowerCase();
-      return (
-        (lower.includes("paper") && (titleLower.includes("paper") || intentLower.includes("paper"))) ||
-        (lower.includes("price") && (titleLower.includes("price") || intentLower.includes("price"))) ||
-        (lower.includes("customer") && (titleLower.includes("customer") || intentLower.includes("customer"))) ||
-        (lower.includes("restaurant") && (titleLower.includes("restaurant") || intentLower.includes("restaurant")))
-      );
-    });
-
+    const previousDraft = [...context.history].reverse().find((message) => message.proposedPlan)?.proposedPlan?.workflow;
+    const activeIsNewer = Boolean(context.activeWorkflow && previousDraft
+      && context.activeWorkflow.workflow_id === previousDraft.workflow_id
+      && context.activeWorkflow.version > previousDraft.version);
+    const candidateWorkflow = activeIsNewer ? context.activeWorkflow : previousDraft?.steps.length ? previousDraft : context.activeWorkflow;
+    const explicitRevisionVerb = /\b(revise|edit|modify|update|change|adjust)\b/i.test(trimmed);
+    const namesWorkflowPart = /\b(workflow|plan|step|action)\b/i.test(trimmed);
+    const refersToCurrentWork = /\b(this|that|it|current|existing|previous|saved)\b/i.test(trimmed);
+    const explicitlyRevising = Boolean(candidateWorkflow && (
+      (explicitRevisionVerb && namesWorkflowPart) ||
+      (/\b(add|remove|delete|rename|reorder|replace|make)\b/i.test(trimmed) && refersToCurrentWork)
+    ));
+    const currentWorkflow = explicitlyRevising ? candidateWorkflow : undefined;
+    const search = currentWorkflow?.steps.length || context.skipWorkflowSearch
+      ? { results: [] }
+      : await api.searchWorkflows(trimmed, context.signal);
+    const matched = (search.results || []).find((item: any) => item.relevance_score >= 5);
     if (matched) {
+      const workflow = matched as WorkflowDefinition;
       return {
-        id: `msg_ai_${Date.now().toString(36)}`,
+        id: `msg_match_${Date.now().toString(36)}`,
         sender: "ai",
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         type: "action_proposal",
-        text: `I identified an existing saved workflow that matches your goal: "${matched.title}" (v${matched.version}).\n\nWould you like to review and run this existing workflow, or propose modified parameters?`,
-        matchedWorkflow: matched,
+        text: `I found a saved workflow that may fit: “${workflow.title}”. Review it before continuing. No actions have been run.`,
+        matchedWorkflow: workflow,
         proposedPlan: {
-          workflow: matched,
-          estimatedSteps: matched.steps.length,
-          risk: matched.steps.some((s) => s.risk === "high") ? "high" : "medium",
-          summary: `Reuses verified procedure "${matched.title}" with ${matched.steps.length} policy-checked steps.`,
+          workflow,
+          estimatedSteps: workflow.steps.length,
+          risk: workflowRisk(workflow),
+          summary: `${workflow.steps.length} saved steps are ready for review.`,
         },
       };
     }
-
-    // 3. AMBIGUOUS GOAL REQUIRING CLARIFICATION DIALOGUE
-    if (lower.includes("restaurant") || lower.includes("food") || lower.includes("dinner")) {
+    const result = currentWorkflow?.steps.length
+      ? await api.reviseWorkflow(currentWorkflow, trimmed, context.signal)
+      : await api.proposeGoal(trimmed, context.signal);
+    if (result.status === "clarification_needed" && result.clarifications?.length) {
+      const clarification = result.clarifications[0] as ClarificationQuestion;
       return {
-        id: `msg_ai_${Date.now().toString(36)}`,
+        id: `msg_clarify_${Date.now().toString(36)}`,
         sender: "ai",
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         type: "clarification_request",
-        text: "I can help find and book a dining reservation, but there are multiple criteria to rank candidates.",
-        clarification: {
-          id: "clarify_restaurant_sort",
-          question: "How should I prioritize restaurant choices for this booking?",
-          explanation: "Multiple candidate restaurants meet the general query; choosing requires knowing your primary ranking preference.",
-          options: [
-            "Rating (Highest rated >= 4.5 stars)",
-            "Price (Budget / lowest tier $)",
-            "Distance (Nearest location < 1.0 mi)",
-            "Ask me to choose manually from top 3",
-          ],
-        },
+        text: result.message || "I need one detail before I can prepare the workflow draft.",
+        clarification,
       };
     }
-
-    if (lower.includes("organize") || lower.includes("files") || lower.includes("download")) {
-      return {
-        id: `msg_ai_${Date.now().toString(36)}`,
-        sender: "ai",
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        type: "clarification_request",
-        text: "I can organize your files into sandbox topic directories, but need to confirm the scope.",
-        clarification: {
-          id: "clarify_folder_scope",
-          question: "Which folder should be scanned, and which file types should be organized?",
-          explanation: "File movement operations require strict sandbox directory scoping and reversible undo tokens.",
-          options: [
-            "Test sandbox folder (PDF files only, non-destructive)",
-            "Download folder (All document formats: PDF, DOCX, TXT)",
-            "Review each file path individually before moving",
-          ],
-        },
-      };
+    const workflow = result.workflow as WorkflowDefinition | undefined;
+    if (!workflow?.steps?.length) {
+      throw new Error("No workflow draft was returned. Add the website and the result you want, then try again.");
     }
-
-    // 4. GENERAL AUTOMATION GOAL: PROPOSE COMPUTER ACTION PLAN
-    // Note: NEVER claim action is executed; it is ONLY proposed and pending approval!
-    const synthesizedWorkflow: WorkflowDefinition = {
-      workflow_id: `wf_syn_${Date.now().toString(36)}`,
-      title: `Automate: ${trimmed.slice(0, 42)}`,
-      intent: trimmed,
-      allowed_origins: ["http://localhost:8000"],
-      parameters: [
-        { name: "target_entity", type: "string", default_value: trimmed.slice(0, 20), required: true },
-        { name: "max_items", type: "number", default_value: 10, required: false },
-      ],
-      steps: [
-        {
-          id: "s1",
-          name: "Inspect permitted target application",
-          action: "navigate",
-          args: { url: "http://localhost:8000/testsite" },
-          risk: "low",
-          requires_confirmation: false,
-          idempotent: true,
-          preconditions: [],
-          postconditions: [],
-          enabled: true,
-        },
-        {
-          id: "s2",
-          name: "Extract element state & evaluate parameters",
-          action: "type",
-          args: { value: "{{target_entity}}" },
-          risk: "medium",
-          requires_confirmation: false,
-          idempotent: true,
-          preconditions: [],
-          postconditions: [],
-          enabled: true,
-        },
-        {
-          id: "s3",
-          name: "Submit action to target system",
-          action: "submit",
-          args: {},
-          risk: "high",
-          requires_confirmation: true,
-          idempotent: false,
-          preconditions: [],
-          postconditions: [{ type: "element_exists", selector: ".alert-success" }],
-          enabled: true,
-        },
-      ],
-      final_postconditions: [{ type: "element_exists", selector: ".alert-success" }],
-      version: 1,
-      content_hash: `sha256:${Math.random().toString(16).slice(2)}`,
-      change_summary: "Generated from natural language goal",
-    };
-
     return {
-      id: `msg_ai_${Date.now().toString(36)}`,
+      id: `msg_draft_${Date.now().toString(36)}`,
       sender: "ai",
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       type: "action_proposal",
-      text:
-        `I prepared a step-by-step action plan to achieve your goal: "${trimmed}".\n\n` +
-        "⚡ Notice: These actions are PROPOSED ONLY. No changes have been made to your computer or applications. You must review the scope and grant explicit approval before execution.",
+      text: currentWorkflow?.steps.length
+        ? `I prepared version ${workflow.version} of “${workflow.title}” from your request. Review the revised steps and scope before approval. Nothing has been run.`
+        : `WhistleCode prepared a draft with ${workflow.steps.length} steps. Review the targets, actions, arguments, risk, and permissions before approval. No actions have been run.`,
       proposedPlan: {
-        workflow: synthesizedWorkflow,
-        estimatedSteps: synthesizedWorkflow.steps.length,
-        risk: "high",
-        summary: `3 steps proposed with high-risk submission gate at step 3.`,
+        workflow,
+        estimatedSteps: workflow.steps.length,
+        risk: (result.risk as RiskLevel) || workflowRisk(workflow),
+        summary: result.summary || `${workflow.steps.length} draft steps are ready for review.`,
       },
     };
   }
 
-  async resolveClarification(
-    questionId: string,
-    answer: string,
-    context: AIServiceContext
-  ): Promise<ConversationMessage> {
-    await this.delay(350, context.signal);
-
-    const isRestaurant = questionId.includes("restaurant");
-    const title = isRestaurant ? "Restaurant Booking Workflow" : "File Organizer Workflow";
-
-    const synthesized: WorkflowDefinition = {
-      workflow_id: `wf_clarified_${Date.now().toString(36)}`,
-      title,
-      intent: `Automated procedure with clarified constraint: ${answer}`,
-      allowed_origins: ["http://localhost:8000"],
-      parameters: isRestaurant
-        ? [
-            { name: "ranking_preference", type: "string", default_value: answer, required: true },
-            { name: "party_size", type: "number", default_value: 2, required: true },
-          ]
-        : [
-            { name: "scope_rule", type: "string", default_value: answer, required: true },
-            { name: "sandbox_folder", type: "string", default_value: "sandbox_papers/", required: true },
-          ],
-      steps: [
-        {
-          id: "s1",
-          name: "Initialize and filter candidates by constraint",
-          action: "navigate",
-          args: { filter: answer },
-          risk: "low",
-          requires_confirmation: false,
-          idempotent: true,
-          preconditions: [],
-          postconditions: [],
-          enabled: true,
-        },
-        {
-          id: "s2",
-          name: "Select verified candidate matching rule",
-          action: "click",
-          args: { rule: answer },
-          risk: "medium",
-          requires_confirmation: false,
-          idempotent: true,
-          preconditions: [],
-          postconditions: [],
-          enabled: true,
-        },
-        {
-          id: "s3",
-          name: "Dispatch action through confirmation gate",
-          action: "submit",
-          args: {},
-          risk: "high",
-          requires_confirmation: true,
-          idempotent: false,
-          preconditions: [],
-          postconditions: [{ type: "element_exists", selector: ".alert-success" }],
-          enabled: true,
-        },
-      ],
-      final_postconditions: [{ type: "element_exists", selector: ".alert-success" }],
-      version: 1,
-      content_hash: `sha256:${Math.random().toString(16).slice(2)}`,
-      change_summary: `Clarified parameter: ${answer}`,
-    };
-
-    return {
-      id: `msg_ai_${Date.now().toString(36)}`,
-      sender: "ai",
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      type: "action_proposal",
-      text:
-        `Thank you. I updated the plan using your selection: "${answer}".\n\n` +
-        "⚡ Notice: The plan is ready for review. Actions will NOT run until approved in Guarded Mode.",
-      proposedPlan: {
-        workflow: synthesized,
-        estimatedSteps: synthesized.steps.length,
-        risk: "high",
-        summary: `Plan customized with constraint: ${answer}.`,
-      },
-    };
+  async resolveClarification(_questionId: string, answer: string, context: AIServiceContext): Promise<ConversationMessage> {
+    const clarification = [...context.history].reverse().find((message) => message.clarification?.id === _questionId)?.clarification;
+    const userMessages = context.history.filter((message) => message.sender === "user").map((message) => message.text);
+    const originalGoal = userMessages.find((text) => !text.startsWith("Selected preference:")) || "Create a workflow plan";
+    const previousAnswers = userMessages.filter((text) => text.startsWith("Selected preference:"));
+    const resolved = [
+      ...previousAnswers,
+      `Question: ${clarification?.question || "Clarification"}\nAnswer: ${answer}`,
+    ];
+    const clarifiedGoal = `${originalGoal}\n\nResolved clarification answers (use these decisions; do not ask them again):\n${resolved.join("\n")}`;
+    return this.processGoal(clarifiedGoal, { ...context, skipWorkflowSearch: true });
   }
 }
 
-// Export singleton instance
-export const defaultAIService: AIService = new MockAIService();
+export const defaultAIService: AIService = new WorkflowAssistantService();

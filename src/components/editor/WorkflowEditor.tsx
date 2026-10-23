@@ -74,14 +74,11 @@ export const WorkflowEditor: React.FC<Props> = ({
         <div>
           <h2>Workflow Editor & Graph (Your Extension)</h2>
           <p className="subtitle">
-            Editable workflow graph, condition branching, and parameters. Every edit generates a new canonical SHA-256 hash.
+            Edit the workflow steps, conditions, and reusable inputs. Saving creates a new version and clears approval for the previous one.
           </p>
         </div>
         <div className="version-tag">
           Version: <strong>v{workflow.version}</strong>
-          <span className="hash-pill" title={workflow.content_hash}>
-            {workflow.content_hash ? workflow.content_hash.slice(0, 16) + "..." : "Draft"}
-          </span>
         </div>
       </div>
 
@@ -120,7 +117,7 @@ export const WorkflowEditor: React.FC<Props> = ({
 
       {saveSuccess && (
         <div className="success-banner">
-          ✓ Workflow saved as version v{workflow.version} with content hash {workflow.content_hash.slice(0, 18)}... Prior approvals invalidated.
+          ✓ Workflow saved as version v{workflow.version}. Any approval for the previous version has been cleared.
         </div>
       )}
 
@@ -280,7 +277,7 @@ export const WorkflowEditor: React.FC<Props> = ({
       {/* POSTCONDITIONS TAB */}
       {activeTab === "conditions" && (
         <div className="conditions-container">
-          <h3>Deterministic Postconditions (VER-1)</h3>
+          <h3>Checks after each run</h3>
           <p className="field-hint">Checks evaluated after execution. A run cannot end "success" without passing all postconditions.</p>
           <div className="conditions-list">
             {workflow.final_postconditions.map((cond, idx) => (

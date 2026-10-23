@@ -10,6 +10,8 @@ type Props = {
   onClose: () => void;
 };
 
+const decisionLabel = (decision: string) => decision === "ALLOW" ? "Allowed" : decision === "REQUIRE_CONFIRMATION" ? "Needs your confirmation" : "Blocked";
+
 export const PlanPreviewModal: React.FC<Props> = ({
   workflow,
   parameters,
@@ -74,7 +76,7 @@ export const PlanPreviewModal: React.FC<Props> = ({
         {error && <div className="error-banner">⚠️ {error}</div>}
 
         {loading ? (
-          <div className="loading-state">Evaluating plan and security policy...</div>
+          <div className="loading-state">Reviewing the plan…</div>
         ) : preview ? (
           <div className="plan-preview-content">
             {/* PLAN OVERVIEW META */}
@@ -83,8 +85,7 @@ export const PlanPreviewModal: React.FC<Props> = ({
                 <strong>Workflow:</strong> {preview.title}
               </div>
               <div>
-                <strong>Content Hash:</strong>{" "}
-                <code className="hash-code">{preview.content_hash.slice(0, 18)}...</code>
+                <strong>Plan version:</strong> v{workflow.version}
               </div>
               <div>
                 <strong>Overall Risk:</strong>{" "}
@@ -97,7 +98,7 @@ export const PlanPreviewModal: React.FC<Props> = ({
                 {isApproved ? (
                   <span className="badge-status-approved">✓ APPROVED</span>
                 ) : (
-                  <span className="badge-status-unapproved">⚠️ UNAPPROVED HASH</span>
+                  <span className="badge-status-unapproved">⚠️ NOT APPROVED</span>
                 )}
               </div>
             </div>
@@ -110,9 +111,9 @@ export const PlanPreviewModal: React.FC<Props> = ({
                     <th>#</th>
                     <th>Action</th>
                     <th>Target UI Element</th>
-                    <th>Evaluated Arguments</th>
+                    <th>Planned details</th>
                     <th>Expected Result</th>
-                    <th>Risk & Policy</th>
+                    <th>Risk & safety check</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -139,7 +140,7 @@ export const PlanPreviewModal: React.FC<Props> = ({
                             {s.risk.toUpperCase()}
                           </span>
                           <span className={`badge-policy badge-policy-${s.policy_decision.toLowerCase()}`}>
-                            {s.policy_decision}
+                            {decisionLabel(s.policy_decision)}
                           </span>
                         </div>
                       </td>
@@ -154,21 +155,19 @@ export const PlanPreviewModal: React.FC<Props> = ({
               <div className="approval-gate-banner">
                 <div className="gate-text">
                   <strong>Explicit User Approval Required</strong>
-                  <p>
-                    PRD Guarantee: An automation is not permitted to execute against live targets without explicit cryptographic approval bound to this exact plan and content hash.
-                  </p>
+                    <p>Review and approve this exact plan before it can run. Editing the plan clears its approval.</p>
                 </div>
                 <button
                   className="btn btn-accent"
                   onClick={handleGrantApproval}
                   disabled={approving}
                 >
-                  {approving ? "Signing Approval..." : "🛡 Sign & Approve Exact Content Hash"}
+                  {approving ? "Saving approval…" : "🛡 Approve this plan"}
                 </button>
               </div>
             ) : (
               <div className="approval-granted-banner">
-                <span>✓ Content hash pinned & approved. Ready for safe policy-enforced execution.</span>
+                <span>✓ This plan is approved and ready to run.</span>
               </div>
             )}
 

@@ -31,6 +31,8 @@ class BrowserRecorder:
         self.is_paused: bool = False
         self._listener_script: str = ""
         self.capture_screenshots: bool = True
+        self.capture_clicks: bool = True
+        self.capture_keyboard: bool = True
 
         if DOM_LISTENER_PATH.exists():
             with open(DOM_LISTENER_PATH, "r", encoding="utf-8") as f:
@@ -86,7 +88,11 @@ class BrowserRecorder:
         await self.page.expose_function("whistleCodeEmitEvent", self._handle_client_event)
 
         # Inject recording script on navigation
-        await self.page.add_init_script(self._listener_script)
+        await self.page.add_init_script(
+            f"window.__whistleCodeCaptureClicks = {str(self.capture_clicks).lower()};"
+            f"window.__whistleCodeCaptureKeyboard = {str(self.capture_keyboard).lower()};\n"
+            + self._listener_script
+        )
 
         # Navigate to target
         await self.page.goto(target_url)

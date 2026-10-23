@@ -13,7 +13,7 @@ export function Header({ activeSection, onNavigateSection }: HeaderProps) {
     section: AppSection;
   }[] = [
     { num: "01", title: "Describe", section: "Overview" },
-    { num: "02", title: "Demonstrate", section: "Teach a Task" },
+    { num: "02", title: "Record", section: "Teach a Task" },
     { num: "03", title: "Understand", section: "Teach a Task" },
     { num: "04", title: "Review", section: "My Workflows" },
     { num: "05", title: "Save", section: "My Workflows" },

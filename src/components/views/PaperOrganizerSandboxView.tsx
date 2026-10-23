@@ -7,8 +7,10 @@ export const PaperOrganizerSandboxView: React.FC = () => {
   const [papers, setPapers] = useState<any[]>([]);
   const [plan, setPlan] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [executing, setExecuting] = useState(false);
   const [undoToken, setUndoToken] = useState<string | null>(null);
+  const [planGrant, setPlanGrant] = useState<string | null>(null);
   const [undoExpires, setUndoExpires] = useState<string | null>(null);
   const [executedResults, setExecutedResults] = useState<any[]>([]);
   const [showClarification, setShowClarification] = useState(false);
@@ -20,12 +22,13 @@ export const PaperOrganizerSandboxView: React.FC = () => {
 
   const loadSandbox = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
-      const res = await (api as any).getSandboxPapers();
+      const res = await api.getSandboxPapers();
       setPapers(res.papers || []);
       setPlan(res.plan || []);
     } catch (e: any) {
-      console.error(e);
+      setLoadError(e.message || "Could not load the paper sandbox.");
     } finally {
       setLoading(false);
     }
@@ -58,6 +61,7 @@ export const PaperOrganizerSandboxView: React.FC = () => {
       ...categoryOverrides,
       "multimodal_vision_language_agents.pdf": chosen
     });
+    setPlanGrant(null);
 
     // Update plan with user clarification
     const updatedPlan = plan.map((p) => {
@@ -80,13 +84,20 @@ export const PaperOrganizerSandboxView: React.FC = () => {
   const handleExecuteOrganize = async () => {
     setExecuting(true);
     try {
-      const res = await (api as any).organizeSandboxPapers(plan, "B.Venkata Srujith");
+      if (!planGrant) {
+        const grant = await api.approveSandboxPlan(plan);
+        setPlan(grant.plan);
+        setPlanGrant(grant.grant_id);
+        return;
+      }
+      const res = await api.organizeSandboxPapers(plan, planGrant);
+      setPlanGrant(null);
       setUndoToken(res.undo_token);
       setUndoExpires(res.expires_at);
       setExecutedResults(res.results || []);
       loadSandbox();
     } catch (e: any) {
-      alert("Error organizing papers: " + e.message);
+      alert("Sandbox plan error: " + e.message);
     } finally {
       setExecuting(false);
     }
@@ -95,7 +106,7 @@ export const PaperOrganizerSandboxView: React.FC = () => {
   const handleUndo = async () => {
     if (!undoToken) return;
     try {
-      await (api as any).undoSandboxPapers(undoToken);
+      await api.undoSandboxPapers(undoToken);
       setUndoToken(null);
       setExecutedResults([]);
       loadSandbox();
@@ -109,14 +120,14 @@ export const PaperOrganizerSandboxView: React.FC = () => {
     <div className="card-panel">
       <div className="panel-header-row">
         <div>
-          <h2>AI Research Paper Organizer (Scoped Benchmark)</h2>
+          <h2>Scoped Paper Organizer Sandbox</h2>
           <p className="subtitle">
-            Demonstrates the complete 10-stage lifecycle: Scoped test folder, clarification on ambiguous papers, preview before execution, deterministic verification, and reversible undo.
+            Review the sample documents, choose a category when needed, and approve a one-time move. You can undo completed moves for five minutes.
           </p>
         </div>
         <div className="status-pill live">
           <span className="dot" />
-          Scoped Sandbox Active: <code>backend/app/sandbox_papers/</code>
+          Sample workspace active
         </div>
       </div>
 
@@ -124,28 +135,30 @@ export const PaperOrganizerSandboxView: React.FC = () => {
       <div className="guarantees-grid" style={{ marginBottom: "20px" }}>
         <div className="guarantee-item">
           <strong>1. Scoped Test Folder</strong>
-          <p>Strict policy engine prevents access to personal documents or directories outside sandbox.</p>
+          <p>Only sample files in this workspace can be moved.</p>
         </div>
         <div className="guarantee-item">
           <strong>2. Clarification on Ambiguity</strong>
-          <p>When a paper's category is ambiguous, the AI asks the user instead of guessing.</p>
+          <p>When a paper's category is ambiguous, the organizer pauses for your choice.</p>
         </div>
         <div className="guarantee-item">
-          <strong>3. Deterministic Verification</strong>
-          <p>Verifies physical presence of each organized file at the expected destination.</p>
+          <strong>3. Move confirmation</strong>
+          <p>Confirms each file reached its selected category.</p>
         </div>
         <div className="guarantee-item">
           <strong>4. Reversible Operations</strong>
-          <p>5-minute cryptographic undo token allows immediate rollback with zero data loss.</p>
+          <p>Completed moves can be undone for five minutes.</p>
         </div>
       </div>
+
+      {loadError && <div className="error-banner" role="alert">{loadError} <button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadSandbox()}>Retry</button></div>}
 
       {/* PAPERS DISCOVERY & CLARIFICATION */}
       <div className="events-stream-card" style={{ marginBottom: "20px" }}>
         <div className="panel-heading">
           <div>
-            <h3>Downloaded Research Papers ({papers.length})</h3>
-            <p className="field-hint">Source directory: <code>sandbox_papers/downloaded/</code></p>
+          <h3>Sample research papers ({papers.length})</h3>
+            <p className="field-hint">Files shown here are sample documents in a protected workspace.</p>
           </div>
           {papers.some((p) => p.needs_clarification) && (
             <button
@@ -231,7 +244,7 @@ export const PaperOrganizerSandboxView: React.FC = () => {
             onClick={handleExecuteOrganize}
             disabled={executing || papers.length === 0}
           >
-            {executing ? "Organizing & Verifying..." : "🛡 Approve Scope & Move Papers"}
+            {executing ? (planGrant ? "Moving & verifying…" : "Preparing approval…") : planGrant ? "✓ Confirm one-time move" : "Review and approve this exact plan"}
           </button>
 
           {undoToken && (
@@ -242,11 +255,11 @@ export const PaperOrganizerSandboxView: React.FC = () => {
         </div>
       </div>
 
-      {/* DETERMINISTIC VERIFICATION OUTCOMES (STAGE 09) */}
+      {/* MOVE RESULTS */}
       {executedResults.length > 0 && (
         <div className="run-results-panel">
-          <h3>Deterministic Postcondition Verification</h3>
-          <p className="field-hint">Files checked against actual file system destinations:</p>
+          <h3>Move results</h3>
+          <p className="field-hint">Each file is checked at its selected destination.</p>
           <div className="step-results-list">
             {executedResults.map((r, idx) => (
               <div key={idx} className="step-result-card passed">

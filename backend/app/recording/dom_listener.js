@@ -111,6 +111,7 @@
 
   // Intercept click with coordinates
   document.addEventListener('click', (e) => {
+    if (window.__whistleCodeCaptureClicks === false) return;
     const el = e.target.closest('button, a, input, select, textarea, [role="button"]') || e.target;
     emit('click', el, null, {
       mouse_x: e.clientX,
@@ -121,6 +122,7 @@
 
   // Intercept change / input
   document.addEventListener('change', (e) => {
+    if (window.__whistleCodeCaptureKeyboard === false) return;
     const el = e.target;
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName)) {
       let val = el.value;
@@ -131,6 +133,7 @@
 
   // Intercept keyboard Enter / Tab / Escape on inputs
   document.addEventListener('keydown', (e) => {
+    if (window.__whistleCodeCaptureKeyboard === false) return;
     if (['Enter', 'Tab', 'Escape'].includes(e.key)) {
       const el = e.target;
       emit('keypress', el, e.key, { key: e.key, code: e.code });
@@ -139,6 +142,7 @@
 
   // Intercept submit
   document.addEventListener('submit', (e) => {
+    if (window.__whistleCodeCaptureClicks === false) return;
     const form = e.target;
     const submitBtn = form.querySelector('[type="submit"]') || form;
     emit('submit', submitBtn);

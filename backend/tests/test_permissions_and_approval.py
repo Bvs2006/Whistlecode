@@ -1,7 +1,7 @@
 import pytest
-import asyncio
 import datetime
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from backend.app.models.workflow import WorkflowDefinition, Step, ParameterDefinition, ActionType, RiskLevel, TargetDescriptor
 from backend.app.models.approval import ApprovalRecord, ApprovalScope
 from backend.app.models.policy import PolicyDecision, ReasonCode
@@ -139,7 +139,7 @@ def test_scope_escalation_denial(sample_workflow):
         approval=appr
     )
     assert decision_bad == PolicyDecision.DENY
-    assert reason_bad == ReasonCode.ORIGIN_NOT_PERMITTED
+    assert reason_bad == ReasonCode.UNAPPROVED_ORIGIN
 
 
 def test_sensitive_field_denial_and_least_privilege(sample_workflow):
@@ -162,7 +162,7 @@ def test_sensitive_field_denial_and_least_privilege(sample_workflow):
         approval=appr
     )
     assert decision == PolicyDecision.DENY
-    assert reason == ReasonCode.SENSITIVE_FIELD_BLOCKED
+    assert reason == ReasonCode.SENSITIVE_FIELD_RESTRICTED
 
 
 def test_model_cannot_forge_signature(sample_workflow):
@@ -185,18 +185,49 @@ def test_model_cannot_forge_signature(sample_workflow):
     assert fake_appr.verify_signature() is False
 
 
-@pytest.mark.asyncio
-async def test_concurrent_approval_verification(sample_workflow):
+def test_concurrent_approval_verification(sample_workflow):
     appr = ApprovalService.create_approval(sample_workflow, allowed_origins=["http://localhost:8000"])
-
-    # Launch 10 concurrent verification checks
-    async def verify_task():
-        return ApprovalService.verify_approval_for_run(sample_workflow, appr.id)
-
-    tasks = [verify_task() for _ in range(10)]
-    results = await asyncio.gather(*tasks)
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        results = list(pool.map(lambda _: ApprovalService.verify_approval_for_run(sample_workflow, appr.id), range(10)))
 
     for valid, reason, record in results:
         assert valid is True
         assert reason == ReasonCode.ALLOWED_WITHIN_SCOPE
         assert record.id == appr.id
+
+
+def test_scope_tampering_invalidates_signature(sample_workflow):
+    approval = ApprovalService.create_approval(sample_workflow)
+    from backend.app.db.database import get_db_connection
+    conn = get_db_connection()
+    conn.execute("UPDATE approvals SET scope_json = ? WHERE id = ?", (
+        ApprovalScope(allowed_origins=["http://localhost:8000", "https://attacker.invalid"],
+                      allowed_action_types=["navigate", "click", "type", "submit"]).model_dump_json(), approval.id
+    ))
+    conn.commit()
+    conn.close()
+    valid, reason, _ = ApprovalService.verify_approval_for_run(sample_workflow, approval.id)
+    assert not valid
+    assert reason == ReasonCode.APPROVAL_HASH_MISMATCH
+
+
+def test_approval_creation_rejects_scope_escalation(sample_workflow):
+    with pytest.raises(ValueError, match="outside the workflow's declared scope"):
+        ApprovalService.create_approval(sample_workflow, allowed_origins=["https://attacker.invalid"])
+
+
+def test_approval_rejects_workflow_without_enabled_steps(sample_workflow):
+    empty_workflow = sample_workflow.model_copy(deep=True)
+    for step in empty_workflow.steps:
+        step.enabled = False
+    with pytest.raises(ValueError, match="at least one enabled workflow step"):
+        ApprovalService.create_approval(empty_workflow)
+
+
+def test_approval_scope_rejects_unapproved_parameters(sample_workflow):
+    approval = ApprovalService.create_approval(sample_workflow)
+    valid, reason, _ = ApprovalService.verify_approval_for_run(
+        sample_workflow, approval.id, {"customer_name": "Alice", "extra_privilege": True}
+    )
+    assert not valid
+    assert reason == ReasonCode.APPROVAL_SCOPE_MISMATCH

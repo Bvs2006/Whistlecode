@@ -7,6 +7,7 @@ export type AppSection =
   | "Overview"
   | "Ask AI"
   | "Teach a Task"
+  | "Recording Studio"
   | "My Workflows"
   | "Permissions"
   | "Live Run"

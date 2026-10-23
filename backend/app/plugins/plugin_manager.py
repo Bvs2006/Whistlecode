@@ -41,6 +41,7 @@ class PluginManager:
     def __init__(self):
         self.plugins: Dict[str, PluginManifest] = {}
         self._init_builtin_plugins()
+        self._builtin_plugin_ids = set(self.plugins)
         self.load_custom_plugins()
 
     def _init_builtin_plugins(self):
@@ -175,6 +176,8 @@ class PluginManager:
                 try:
                     data = json.loads(r["manifest_json"])
                     p = PluginManifest(**data)
+                    if p.id in self._builtin_plugin_ids:
+                        continue
                     p.enabled = bool(r["enabled"])
                     self.plugins[p.id] = p
                 except Exception:
@@ -184,6 +187,8 @@ class PluginManager:
             pass
 
     def register_plugin(self, manifest: PluginManifest) -> PluginManifest:
+        if manifest.id in self._builtin_plugin_ids:
+            raise ValueError("Built-in plugin identifiers are reserved and cannot be replaced")
         self.plugins[manifest.id] = manifest
         try:
             conn = get_db_connection()
@@ -218,6 +223,34 @@ class PluginManager:
     def list_plugins(self) -> List[PluginManifest]:
         return list(self.plugins.values())
 
+    @staticmethod
+    def validate_args(tool: ToolDefinition, args: Dict[str, Any]) -> Optional[str]:
+        if not isinstance(args, dict):
+            return "Tool arguments must be a JSON object"
+        schema = tool.parameters_schema or {}
+        unexpected = set(args) - set(schema)
+        if unexpected:
+            return f"Unexpected tool argument(s): {', '.join(sorted(unexpected))}"
+        for name, definition in schema.items():
+            spec = definition if isinstance(definition, dict) else {"type": definition}
+            value = args.get(name)
+            if value is None:
+                if spec.get("required"):
+                    return f"Missing required argument: {name}"
+                continue
+            expected = spec.get("type")
+            valid = {
+                "string": lambda v: isinstance(v, str),
+                "object": lambda v: isinstance(v, dict),
+                "array": lambda v: isinstance(v, list),
+                "boolean": lambda v: isinstance(v, bool),
+                "integer": lambda v: isinstance(v, int) and not isinstance(v, bool),
+                "number": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool),
+            }.get(expected)
+            if valid and not valid(value):
+                return f"Argument '{name}' must be {expected}"
+        return None
+
     def get_tool(self, plugin_id: str, tool_name: str) -> Optional[ToolDefinition]:
         plugin = self.plugins.get(plugin_id)
         if not plugin or not plugin.enabled:
@@ -226,6 +259,14 @@ class PluginManager:
             if t.name == tool_name:
                 return t
         return None
+
+    @staticmethod
+    def has_execution_adapter(plugin_id: str, tool_name: str) -> bool:
+        return (plugin_id, tool_name) in {
+            ("plugin_http_webhook", "post_webhook"), ("plugin_http_webhook", "fetch_rest_api"),
+            ("plugin_data_export", "export_csv"), ("plugin_data_export", "export_json"),
+            ("plugin_desktop_notifier", "notify_user"),
+        }
 
     def execute_tool(self, plugin_id: str, tool_name: str, args: Dict[str, Any], dry_run: bool = False) -> Dict[str, Any]:
         plugin = self.plugins.get(plugin_id)
@@ -238,7 +279,14 @@ class PluginManager:
         if not tool:
             return {"success": False, "error": f"Tool '{tool_name}' not found in plugin '{plugin_id}'"}
 
+        validation_error = self.validate_args(tool, args)
+        if validation_error:
+            return {"success": False, "error": validation_error}
+
         if dry_run:
+            if not self.has_execution_adapter(plugin_id, tool_name):
+                return {"success": True, "dry_run": True, "dispatched": False,
+                        "message": "Arguments are valid. This action has no live connection and was not dispatched."}
             return {
                 "success": True,
                 "dry_run": True,
@@ -251,6 +299,9 @@ class PluginManager:
             if plugin_id == "plugin_http_webhook":
                 if tool_name == "post_webhook":
                     url = args.get("url", "")
+                    parsed_url = urllib.parse.urlparse(url)
+                    if parsed_url.scheme not in {"http", "https"} or not parsed_url.hostname or parsed_url.username or parsed_url.password:
+                        return {"success": False, "error": "Webhook URL must be an absolute HTTP(S) URL without embedded credentials"}
                     payload = json.dumps(args.get("payload", {})).encode("utf-8")
                     req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
                     with urllib.request.urlopen(req, timeout=5) as response:
@@ -258,6 +309,9 @@ class PluginManager:
                         return {"success": True, "status_code": response.status, "response": res_data[:500]}
                 elif tool_name == "fetch_rest_api":
                     url = args.get("url", "")
+                    parsed_url = urllib.parse.urlparse(url)
+                    if parsed_url.scheme not in {"http", "https"} or not parsed_url.hostname or parsed_url.username or parsed_url.password:
+                        return {"success": False, "error": "REST URL must be an absolute HTTP(S) URL without embedded credentials"}
                     with urllib.request.urlopen(url, timeout=5) as response:
                         res_data = response.read().decode("utf-8")
                         return {"success": True, "status_code": response.status, "data": json.loads(res_data)}
@@ -270,8 +324,13 @@ class PluginManager:
 
             elif plugin_id == "plugin_data_export":
                 filename = args.get("filename", "whistlecode_export.json")
-                out_path = Path(__file__).parent.parent.parent / "exports" / filename
-                out_path.parent.mkdir(parents=True, exist_ok=True)
+                if not filename or Path(filename).name != filename or filename in {".", ".."}:
+                    return {"success": False, "error": "Export filename must be a single file name inside the exports directory"}
+                export_root = (Path(__file__).parent.parent.parent / "exports").resolve()
+                export_root.mkdir(parents=True, exist_ok=True)
+                out_path = (export_root / filename).resolve()
+                if export_root not in out_path.parents:
+                    return {"success": False, "error": "Export path escapes the exports directory"}
                 with open(out_path, "w", encoding="utf-8") as f:
                     if tool_name == "export_csv":
                         rows = args.get("rows", [])
@@ -285,15 +344,9 @@ class PluginManager:
                 return {"success": True, "exported_path": str(out_path)}
 
             elif plugin_id == "plugin_mcp_bridge":
-                return {
-                    "success": True,
-                    "server": args.get("server_name"),
-                    "tool": args.get("tool_name"),
-                    "mcp_status": "dispatched",
-                    "result": {"status": "ok", "echo_args": args.get("arguments")}
-                }
+                return {"success": False, "error": "No MCP server adapter is connected in this build; the tool was not dispatched."}
 
-            return {"success": True, "executed": f"{plugin_id}.{tool_name}", "args": args}
+            return {"success": False, "error": f"No execution adapter is implemented for {plugin_id}.{tool_name}; the tool was not run."}
         except Exception as e:
             return {"success": False, "error": str(e)}
 
