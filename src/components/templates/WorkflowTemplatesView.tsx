@@ -382,118 +382,85 @@ export const WorkflowTemplatesView: React.FC<Props> = ({
   });
 
   return (
-    <div className="h-full flex flex-col bg-slate-950 text-slate-100 overflow-y-auto">
-      {/* Top Banner (Caddi + Lindy hybrid styling) */}
-      <div className="border-b border-slate-800 bg-slate-900/60 px-8 py-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/30 text-purple-400">
-              <Sparkles className="w-6 h-6" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-                Workflow templates
-              </h1>
-              <p className="text-sm text-slate-400 mt-1">
-                Start with a reviewed recipe, or record a custom demonstration for your own workspace.
-              </p>
-            </div>
+    <div className="feature-page template-page h-full flex flex-col overflow-y-auto">
+      <header className="feature-page-header template-header">
+        <div className="feature-page-heading">
+          <div className="feature-page-icon"><Sparkles /></div>
+          <div>
+            <span className="feature-eyebrow">WORKFLOW LIBRARY</span>
+            <h1>Templates</h1>
+            <p>Choose a reviewed starting point, then customize it in the workflow editor.</p>
           </div>
-
-          <button
-            onClick={() => onNavigateSection("Teach")}
-            className="flex items-center gap-2 px-4 py-2 text-white rounded-xl text-xs font-bold transition-all self-start md:self-auto"
-          >
-            <Video className="w-4 h-4 text-rose-300 fill-current" />
-            Record Custom Workflow Demonstration
-          </button>
         </div>
+        <button type="button" onClick={() => onNavigateSection("Teach")} className="feature-primary-action">
+          <Video /> Record a custom task
+        </button>
+      </header>
 
-        {/* Categories Bar */}
-        <div className="flex flex-wrap items-center gap-2 mt-6">
+      <div className="template-toolbar">
+        <div className="template-search">
+          <Search />
+          <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search templates" aria-label="Search templates" />
+        </div>
+        <div className="template-categories" aria-label="Template categories">
           {["ALL", "Finance", "Sales & CRM", "Operations", "Research", "DevOps & IT"].map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                selectedCategory === cat
-                  ? "bg-purple-600 text-white shadow-sm"
-                  : "bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800"
-              }`}
-            >
-              {cat}
+            <button key={cat} type="button" className={selectedCategory === cat ? "active" : ""} onClick={() => setSelectedCategory(cat)}>
+              {cat === "ALL" ? "All templates" : cat}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Main Grid Layout */}
-      <div className="p-8 max-w-7xl mx-auto w-full flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="template-layout">
+        <div className="template-grid">
         {filtered.map((tmpl) => (
-          <div
-            key={tmpl.id}
-            className="bg-slate-900 border border-slate-800 rounded-2xl p-6 hover:border-purple-500/40 transition-all flex flex-col justify-between space-y-4 group"
-          >
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-purple-400">
-                  {tmpl.category}
-                </span>
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 font-semibold border border-emerald-500/20">
-                  {tmpl.timeSaved}
-                </span>
-              </div>
-
-              <h3 className="font-bold text-base text-white group-hover:text-purple-300 transition-colors">
-                {tmpl.title}
-              </h3>
-              <p className="text-xs text-slate-400 mt-2 line-clamp-3 leading-relaxed">
-                {tmpl.description}
-              </p>
-
-              {/* Integrations Chips */}
-              <div className="mt-4 pt-3 border-t border-slate-800/80">
-                <div className="text-[11px] text-slate-500 font-medium mb-1.5">Required Integrations:</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {tmpl.requiredIntegrations.map((integ) => (
-                    <span
-                      key={integ}
-                      className="text-[10px] bg-slate-800/90 text-slate-300 px-2 py-0.5 rounded border border-slate-700/60"
-                    >
-                      {integ}
-                    </span>
-                  ))}
-                </div>
-              </div>
+          <article key={tmpl.id} className={`template-card ${activeTemplate?.id === tmpl.id ? "active" : ""}`} onClick={() => setActiveTemplate(tmpl)}>
+            <div className="template-card-top">
+              <span className="template-category">{tmpl.category}</span>
+              <span className="template-time">{tmpl.timeSaved}</span>
             </div>
-
-            {/* Actions */}
-            <div className="pt-3 border-t border-slate-800 flex items-center justify-between gap-2">
-              <button
-                onClick={() => onUseTemplate(tmpl.workflow)}
-                className="flex-1 py-2 px-3 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md shadow-purple-600/20"
-              >
-                <Zap className="w-3.5 h-3.5 fill-current" />
-                Use Template
+            <h3>{tmpl.title}</h3>
+            <p>{tmpl.description}</p>
+            <div className="template-integrations">
+              {tmpl.requiredIntegrations.map((integ) => <span key={integ}>{integ}</span>)}
+            </div>
+            <div className="template-card-actions">
+              <button type="button" onClick={(event) => { event.stopPropagation(); onUseTemplate(tmpl.workflow); }}>
+                <Zap /> Use template
               </button>
-
               {tmpl.demoUrl && (
-                <button
-                  onClick={() =>
-                    onRecordDemonstration({
-                      url: tmpl.demoUrl!,
-                      description: `Demonstrate workflow for: ${tmpl.title}`,
-                    })
-                  }
-                  className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition-colors"
-                  title="Teach task via live screen demonstration"
-                >
-                  <Video className="w-4 h-4 text-rose-400" />
+                <button type="button" className="template-record-button" title="Record this task" onClick={(event) => {
+                  event.stopPropagation();
+                  onRecordDemonstration({ url: tmpl.demoUrl!, description: `Demonstrate workflow for: ${tmpl.title}` });
+                }}>
+                  <Video />
                 </button>
               )}
             </div>
-          </div>
+          </article>
         ))}
+        </div>
+
+        {activeTemplate && (
+          <aside className="template-preview">
+            <span className="template-preview-kicker">SELECTED TEMPLATE</span>
+            <h2>{activeTemplate.title}</h2>
+            <p>{activeTemplate.description}</p>
+            <div className="template-preview-meta">
+              <div><span>Category</span><strong>{activeTemplate.category}</strong></div>
+              <div><span>Estimated savings</span><strong>{activeTemplate.timeSaved}</strong></div>
+              <div><span>Steps</span><strong>{activeTemplate.workflow.steps.length}</strong></div>
+            </div>
+            <div className="template-step-preview">
+              {activeTemplate.workflow.steps.slice(0, 4).map((step, index) => (
+                <div key={step.id}><span>{index + 1}</span><div><strong>{step.name}</strong><small>{step.action}</small></div></div>
+              ))}
+            </div>
+            <button type="button" className="feature-primary-action" onClick={() => onUseTemplate(activeTemplate.workflow)}>
+              Open in workflow editor <ArrowRight />
+            </button>
+          </aside>
+        )}
       </div>
     </div>
   );

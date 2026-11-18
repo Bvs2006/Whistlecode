@@ -45,7 +45,7 @@ export const IntegrationHubView: React.FC = () => {
   const [docBusy, setDocBusy] = useState(false);
   const [downloadPath, setDownloadPath] = useState<string | null>(null);
 
-  const secretIntegrations = new Set(["integ_gemini", "integ_groq", "integ_openrouter", "integ_github"]);
+  const secretIntegrations = new Set(["integ_gemini", "integ_groq", "integ_grok", "integ_openrouter", "integ_github", "integ_slack"]);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -180,7 +180,7 @@ export const IntegrationHubView: React.FC = () => {
       );
       const path = result.result?.download_path;
       if (!path) throw new Error("The generator did not return a file.");
-      setDownloadPath(`http://localhost:8000${path}`);
+      setDownloadPath(path);
       setNotice(`${docKind.toUpperCase()} file created and verified.`);
     } catch (e) {
       setNotice(e instanceof Error ? e.message : "Document generation failed");
@@ -190,7 +190,7 @@ export const IntegrationHubView: React.FC = () => {
   };
 
   return (
-    <div className="h-full flex flex-col bg-slate-950 text-slate-100 overflow-y-auto">
+    <div className="feature-page integration-page h-full flex flex-col overflow-y-auto">
       {/* Header */}
       <div className="border-b border-slate-800 bg-slate-900/60 px-8 py-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

@@ -83,9 +83,9 @@ export const UnifiedActivityCenter: React.FC<Props> = ({
   });
 
   return (
-    <div className="h-full flex flex-col bg-slate-950 text-slate-100 overflow-y-auto">
+    <div className="feature-page activity-page h-full flex flex-col overflow-y-auto">
       {/* Top Banner */}
-      <div className="border-b border-slate-800 bg-slate-900/60 px-8 py-6">
+      <div className="feature-page-header border-b border-slate-800 px-8 py-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/30 text-purple-400">
