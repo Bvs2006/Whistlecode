@@ -40,14 +40,6 @@ export const ManusDashboard: React.FC<Props> = ({
       action: () => onNavigate("My Workflows"),
     },
     {
-      id: "sug_catalog",
-      title: "Search Catalog & Copy SKU",
-      subtitle: "Search equipment inventory and verify transfer across application forms",
-      icon: "📦",
-      color: "#a855f7",
-      action: () => onNavigate("Test Site Sandbox"),
-    },
-    {
       id: "sug_ticket",
       title: "Consequential Support Ticket",
       subtitle: "A sensitive step pauses for your review before it runs.",

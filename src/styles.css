@@ -2831,17 +2831,17 @@ button, input, textarea, select {
 
 .chat-bubble-row {
   display: flex;
-  gap: 10px;
-  max-width: 85%;
+  gap: 12px;
+  width: 100%;
+  max-width: 100%;
 }
 
 .chat-bubble-row.user-row {
-  align-self: flex-end;
-  flex-direction: row-reverse;
+  justify-content: flex-end;
 }
 
 .chat-bubble-row.ai-row {
-  align-self: flex-start;
+  justify-content: flex-start;
 }
 
 .chat-avatar-icon {

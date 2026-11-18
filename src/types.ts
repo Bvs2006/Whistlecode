@@ -5,20 +5,30 @@ export type NavItem = {
 
 export type AppSection =
   | "Overview"
+  | "Workspace"
   | "Ask AI"
+  | "Templates"
+  | "Agents"
+  | "Discover"
+  | "Teach"
+  | "Automations"
+  | "Skills & Memory"
+  | "Artifacts"
   | "Teach a Task"
   | "Recording Studio"
   | "My Workflows"
   | "Permissions"
+  | "Governance"
   | "Live Run"
   | "Activity"
-  | "Settings"
+  | "Integrations"
   | "Dashboard"
   | "Run Monitor"
+  | "Execution History"
   | "Approval & Scope"
   | "Activity & Audit"
   | "Plugins & Tools"
-  | "Test Site Sandbox";
+  | "Settings";
 
 export type Workflow = {
   name: string;

@@ -14,6 +14,9 @@ def get_db_connection() -> sqlite3.Connection:
     return conn
 
 
+get_db = get_db_connection
+
+
 def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -126,6 +129,112 @@ def init_db():
         plan_hash TEXT NOT NULL,
         expires_at TEXT NOT NULL,
         consumed_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS agents (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        instructions TEXT,
+        model TEXT,
+        assigned_skills_json TEXT,
+        connected_integrations_json TEXT,
+        memory_config_json TEXT,
+        trigger_config_json TEXT,
+        permission_scope_json TEXT,
+        execution_policy_json TEXT,
+        workflow_plan_json TEXT,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS skills (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        category TEXT NOT NULL,
+        input_schema_json TEXT,
+        output_schema_json TEXT,
+        workflow_definition_json TEXT,
+        required_tools_json TEXT,
+        permission_requirements_json TEXT,
+        version INTEGER NOT NULL DEFAULT 1,
+        is_trusted INTEGER NOT NULL DEFAULT 0,
+        validation_status TEXT NOT NULL DEFAULT 'validated',
+        execution_count INTEGER NOT NULL DEFAULT 0,
+        success_count INTEGER NOT NULL DEFAULT 0,
+        failure_count INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS agent_memories (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT,
+        category TEXT NOT NULL,
+        key TEXT NOT NULL,
+        value TEXT NOT NULL,
+        provenance TEXT NOT NULL DEFAULT 'user_entry',
+        confidence REAL NOT NULL DEFAULT 1.0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS integrations (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        category TEXT NOT NULL,
+        status TEXT NOT NULL,
+        icon TEXT NOT NULL,
+        is_mcp INTEGER NOT NULL DEFAULT 0,
+        endpoint_or_server TEXT,
+        available_tools_json TEXT,
+        required_permissions_json TEXT,
+        config_schema_json TEXT,
+        has_credentials INTEGER NOT NULL DEFAULT 0,
+        last_tested_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS automations (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        agent_id TEXT,
+        trigger_type TEXT NOT NULL,
+        schedule_cron TEXT,
+        timezone TEXT NOT NULL DEFAULT 'UTC',
+        event_filter_json TEXT,
+        retry_count INTEGER NOT NULL DEFAULT 3,
+        retry_delay_seconds INTEGER NOT NULL DEFAULT 60,
+        duplicate_protection_window_seconds INTEGER NOT NULL DEFAULT 300,
+        status TEXT NOT NULL,
+        required_permissions_json TEXT,
+        last_triggered_at TEXT,
+        next_run_at TEXT,
+        execution_count INTEGER NOT NULL DEFAULT 0,
+        failure_count INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS integration_credentials (
+        integration_id TEXT PRIMARY KEY,
+        storage TEXT NOT NULL,
+        secret TEXT,
+        updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS artifacts (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        path TEXT NOT NULL,
+        byte_size INTEGER NOT NULL,
+        created_at TEXT NOT NULL
     );
     """)
 

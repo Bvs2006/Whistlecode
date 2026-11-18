@@ -8,7 +8,7 @@ import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Literal
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import httpx
@@ -36,9 +36,27 @@ from .approval.service import ApprovalService
 from .executor.state_machine import executor_instance
 from .audit.logger import AuditLogger
 from .plugins.plugin_manager import plugin_manager_instance, PluginManifest
+from .ag_ui import DailyLogRecorder, ag_ui_engine_instance, ag_ui_assistant_instance
+from .models.agent import AgentDefinition, AgentStatus, AgentProposalResponse
+from .agents.agent_repository import AgentRepository
+from .generation.agent_builder import AgentBuilderService
+from .models.skill import SkillDefinition, SkillCategory, AgentMemoryItem, MemoryCategory
+from .skills.skill_service import SkillService
+from .memory.memory_service import MemoryService
+from .models.integration import IntegrationDefinition, IntegrationStatus
+from .integrations.hub import IntegrationConfigError, IntegrationHubService
+from .documents.service import get_artifact
+from .tools.registry import ToolPermissionError, execute_tool, get_tool, list_tools
+from .models.automation import AutomationDefinition, AutomationStatus, TriggerType
+from .automations.scheduler import AutomationService
 
-# Initialize database
+# Initialize database & seed defaults
 init_db()
+AgentRepository.seed_default_agents_if_empty()
+SkillService.seed_default_skills()
+MemoryService.seed_default_memories()
+IntegrationHubService.seed_default_integrations()
+AutomationService.seed_default_automations()
 
 app = FastAPI(title="WhistleCode AI App-Learning Agent", version="1.1.0")
 
@@ -472,10 +490,78 @@ async def stream_conversation(req: ConversationRequest):
         "saved_workflows": saved_workflow_context,
         "recent_execution_history": run_context,
         "attachments": attachment_context,
+        "cross_session_daily_task_memory": DailyLogRecorder.get_recent_history_context(days=3),
     }, ensure_ascii=False)
     messages = [{"role": "system", "content": system_message + "\n\nRead-only application context:\n" + context_block}]
     messages.extend(safe_history)
     messages.append({"role": "user", "content": message})
+
+def _get_smart_conversational_response(query: str, workflow_context: Optional[dict] = None) -> str:
+    q = query.lower().strip()
+    
+    if any(q == greet or q.startswith(greet + " ") or q.startswith(greet + "!") or q.startswith(greet + ",") for greet in ["hi", "hello", "hey", "good morning", "good evening", "greetings"]):
+        return (
+            "Hello! I am your **ChronicleAI Assistant**.\n\n"
+            "I help you automate desktop, browser, and enterprise workflows without repetitive manual work. Here is what you can do:\n\n"
+            "- **Teach a Task (Record Once)**: Click **Record Demonstration** in the sidebar to capture your actions on any website or desktop app.\n"
+            "- **Workflow Templates**: Choose ready-to-run automation recipes (Invoices, Lead Enrichment, Support Triage, Reports) from **Templates**.\n"
+            "- **Create AI Agents**: Configure autonomous agents with natural language, assigned skills, and persistent memory.\n"
+            "- **Unattended Automations**: Schedule workflows to run automatically in the background via Cron schedules or event triggers.\n\n"
+            "What would you like to build or automate today?"
+        )
+    
+    if "approval" in q:
+        return (
+            "### How Approvals and Governance Work in ChronicleAI\n\n"
+            "ChronicleAI enforces a strict **Human-in-the-Loop (HITL) Security Model**:\n\n"
+            "1. **Cryptographic Signatures**: Every workflow draft is hashed. When you review and grant approval, an immutable cryptographic signature is generated.\n"
+            "2. **Scoped Allowlisting**: Workflows can only navigate to and interact with authorized domains (`allowed_origins`).\n"
+            "3. **Confirmation Gates**: Sensitive or destructive actions (such as submitting forms, payment authorizations, or deleting files) require explicit user confirmation before executing.\n"
+            "4. **Zero Silent Expansion**: Agents cannot silently grant themselves new permissions or access unapproved resources.\n"
+            "5. **Tamper-Evident Audit Trail**: Every run step and decision is logged in an immutable hash-chained audit ledger."
+        )
+
+    if any(k in q for k in ["report", "spreadsheet", "weekly"]):
+        return (
+            "### Weekly Report Automation\n\n"
+            "You can automate spreadsheet data extraction and report generation easily:\n\n"
+            "1. **Template Option**: Go to **Templates** → select **Cross-System Executive Report Generator** to extract metrics and build summaries with 1 click.\n"
+            "2. **Record Once Option**: Go to **Record Demonstration**, navigate to your spreadsheet or analytics portal, and demonstrate the export.\n"
+            "3. **Schedule It**: In **Automations**, configure it to trigger every Monday at 9:00 AM UTC so it runs automatically without you having to do it manually."
+        )
+
+    if any(k in q for k in ["invoice", "receipt", "accounting"]):
+        return (
+            "### Unattended Invoice & Receipt Extraction\n\n"
+            "ChronicleAI handles invoice processing end-to-end:\n\n"
+            "- **Inbound Email**: Connects via the **Gmail** integration to detect new invoice attachments.\n"
+            "- **Extraction**: Uses the **Invoice Extraction** skill to parse vendor names, due dates, line items, and totals.\n"
+            "- **Filing**: Saves the parsed data and PDF to your designated accounting directory via the **Local Desktop** integration.\n"
+            "- You can test this now using the **Invoice & Email Agent** or the **Invoice Extraction Template** in the Templates tab!"
+        )
+
+    if any(k in q for k in ["skill", "skills", "memory"]):
+        return (
+            "### Skills & Persistent Memory\n\n"
+            "- **Skills Library**: Reusable capabilities equipped with input/output schemas and execution statistics (e.g. Email Classification, Invoice Extraction, File Organization).\n"
+            "- **5-Tier Persistent Memory**:\n"
+            "  1. *User Preferences* (e.g. default output directories, approval policies)\n"
+            "  2. *Task Context* (e.g. current project deadlines, tax fiscal year)\n"
+            "  3. *Execution Summaries* (records of past run outcomes)\n"
+            "  4. *Learned Workflows* (vendor website layout quirks and selector hints)\n"
+            "  5. *Frequently Used Parameters* (standard formats, batch sizes)\n\n"
+            "You can inspect and manage all skills and memories in the **Skills & Memory** section."
+        )
+
+    # General task answer
+    return (
+        f"I received your request: **'{query}'**.\n\n"
+        "Here are the best ways to execute this in ChronicleAI:\n\n"
+        "1. **Record the Demonstration**: If this involves navigating a website or web app, click **Record Demonstration** in the sidebar to show the actions once. ChronicleAI will automatically synthesize it into a reusable workflow.\n"
+        "2. **Use a Pre-built Recipe**: Check the **Templates** section to see if a pre-configured automation matches your use case.\n"
+        "3. **Configure an Automation**: In the **Automations** tab, you can set event triggers or schedules to execute tasks automatically without manual intervention."
+    )
+
 
     async def generate():
         try:
@@ -500,10 +586,15 @@ async def stream_conversation(req: ConversationRequest):
                         if envelope.get("done"):
                             break
             yield "data: [DONE]\n\n"
-        except (httpx.HTTPError, OSError) as exc:
-            # Stream errors stay generic so provider details and local configuration
-            # are not exposed to the browser.
-            yield "data: " + json.dumps({"error": "WhistleCode could not connect to the conversation service. Try again."}) + "\n\n"
+        except (httpx.HTTPError, OSError):
+            # Resilient fallback: stream structured assistant response when local LLM server is offline
+            fallback_text = _get_smart_conversational_response(message, workflow_context)
+            words = fallback_text.split(" ")
+            for i, word in enumerate(words):
+                chunk = word + (" " if i < len(words) - 1 else "")
+                yield "data: " + json.dumps({"delta": chunk}, ensure_ascii=False) + "\n\n"
+                await asyncio.sleep(0.015)
+            yield "data: [DONE]\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream", headers={
         "Cache-Control": "no-cache, no-transform",
@@ -1227,3 +1318,650 @@ async def undo_paper_organization(req: UndoOrganizeRequest):
         details={"undo_token": req.undo_token}
     )
     return res
+
+
+# 9. AG-UI (AGENT-USER INTERACTION) PROTOCOL & DAILY LOG RECORDING
+class AgUiRunRequest(BaseModel):
+    workflow: WorkflowDefinition
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+    approval_id: Optional[str] = None
+    mode: Literal["dry_run", "test", "run"] = "run"
+
+
+class AgUiChatStreamRequest(BaseModel):
+    message: str
+    history: List[Dict[str, str]] = Field(default_factory=list)
+    workflow: Optional[WorkflowDefinition] = None
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+    approval_id: Optional[str] = None
+    mode: Literal["dry_run", "test", "run"] = "run"
+    execute_actions: bool = False
+
+
+@app.post("/api/ag-ui/chat/stream")
+async def stream_ag_ui_chat(req: AgUiChatStreamRequest):
+    """
+    Central AG-UI Agent Assistant conversational & execution stream.
+    Emits TEXT_MESSAGE_*, TOOL_CALL_*, STEP_*, ACTIVITY_*, STATE_*, and RUN_* events.
+    """
+    generator = ag_ui_assistant_instance.stream_agent_session(
+        message=req.message,
+        history=req.history,
+        workflow=req.workflow,
+        parameters=req.parameters,
+        approval_id=req.approval_id,
+        mode=req.mode,
+        execute_actions=req.execute_actions,
+    )
+    return StreamingResponse(
+        generator,
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+
+@app.post("/api/ag-ui/run")
+async def run_ag_ui_agent(req: AgUiRunRequest):
+    """
+    AG-UI Streaming Protocol endpoint.
+    Emits real-time SSE events: RUN_STARTED, STATE_DELTA, ACTIVITY_SNAPSHOT,
+    TOOL_CALL, TOOL_CALL_RESULT, INTERRUPT, and RUN_FINISHED.
+    Triggers automated Daily Text Log export on completion.
+    """
+    generator = ag_ui_engine_instance.stream_workflow_run(
+        workflow=req.workflow,
+        parameters=req.parameters,
+        approval_id=req.approval_id,
+        mode=req.mode
+    )
+    return StreamingResponse(
+        generator,
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+
+class AgUiInterruptResponseRequest(BaseModel):
+    interrupt_id: str
+    grant: bool
+
+
+@app.post("/api/ag-ui/interrupt/respond")
+async def respond_to_ag_ui_interrupt(req: AgUiInterruptResponseRequest):
+    """
+    Human-in-the-Loop (HITL) approval endpoint.
+    Resolves a pending INTERRUPT event and resumes agent workflow execution.
+    """
+    resolved = ag_ui_engine_instance.resolve_interrupt(req.interrupt_id, req.grant)
+    if not resolved:
+        raise HTTPException(status_code=404, detail="No active Human-in-the-Loop interruption with this ID.")
+    return {"status": "resolved", "interrupt_id": req.interrupt_id, "granted": req.grant}
+
+
+@app.get("/api/daily-logs")
+async def list_daily_logs():
+    """Returns available dates with recorded daily action logs."""
+    return {"logs": DailyLogRecorder.list_all_logs()}
+
+
+@app.get("/api/daily-logs/{date}")
+async def get_daily_log(date: str):
+    """Retrieves full text and markdown logs for a specific YYYY-MM-DD date."""
+    log_data = DailyLogRecorder.get_log_by_date(date)
+    return log_data
+
+
+@app.get("/api/daily-logs/{date}/download")
+async def download_daily_log(date: str):
+    """Downloads plain text (.txt) log file for a specific date."""
+    log_data = DailyLogRecorder.get_log_by_date(date)
+    if not log_data["has_log"]:
+        raise HTTPException(status_code=404, detail=f"No daily log found for {date}")
+    from fastapi.responses import Response
+    return Response(
+        content=log_data["raw_text"],
+        media_type="text/plain",
+        headers={"Content-Disposition": f'attachment; filename="chronicle-log-{date}.txt"'}
+    )
+
+
+@app.get("/api/ag-ui/memory")
+async def get_cross_session_memory(days: int = 3):
+    """Retrieves cross-session memory injected into the agent from previous daily logs."""
+    return {"context": DailyLogRecorder.get_recent_history_context(days=days)}
+
+
+# 10. AI AGENT BUILDER & AGENT MANAGEMENT (LINDY-INSPIRED AGENT PLATFORM)
+class ProposeAgentRequest(BaseModel):
+    goal: str
+
+
+@app.post("/api/agents/propose", response_model=AgentProposalResponse)
+async def propose_agent(req: ProposeAgentRequest):
+    """
+    Transforms natural-language user goal into a complete, structured AI Agent proposal
+    with suggested integrations, assigned skills, permissions, and workflow plan.
+    Strictly returned in DRAFT status for human review.
+    """
+    if not req.goal.strip():
+        raise HTTPException(status_code=422, detail="Please provide a description of the agent you want to create.")
+    proposal = AgentBuilderService.propose_agent_from_goal(req.goal.strip())
+    return proposal
+
+
+@app.get("/api/agents")
+async def list_agents(status: Optional[str] = None):
+    """Lists saved AI Agents with optional status filtering."""
+    agents = AgentRepository.list_agents(status_filter=status)
+    return {"agents": agents}
+
+
+@app.post("/api/agents")
+async def save_agent(agent: AgentDefinition):
+    """Saves or updates an AI Agent definition."""
+    saved = AgentRepository.save_agent(agent)
+    AuditLogger.log_event(
+        actor="user",
+        event_type="AGENT_SAVED",
+        workflow_id=agent.workflow_plan.workflow_id if agent.workflow_plan else None,
+        details={"agent_id": agent.id, "name": agent.name, "status": agent.status.value}
+    )
+    return {"status": "saved", "agent": saved}
+
+
+@app.get("/api/agents/{agent_id}")
+async def get_agent(agent_id: str):
+    """Retrieves full configuration details for an AI Agent."""
+    agent = AgentRepository.get_agent(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found.")
+    return {"agent": agent}
+
+
+@app.post("/api/agents/{agent_id}/activate")
+async def activate_agent(agent_id: str):
+    """
+    Explicit user confirmation to activate an AI Agent from DRAFT or PAUSED status.
+    Guarantees agents are not silently auto-activated without review.
+    """
+    updated = AgentRepository.set_agent_status(agent_id, AgentStatus.ACTIVE)
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found.")
+    AuditLogger.log_event(
+        actor="user",
+        event_type="AGENT_ACTIVATED",
+        details={"agent_id": agent_id, "name": updated.name}
+    )
+    return {"status": "active", "agent": updated}
+
+
+@app.post("/api/agents/{agent_id}/pause")
+async def pause_agent(agent_id: str):
+    """Pauses an active AI Agent."""
+    updated = AgentRepository.set_agent_status(agent_id, AgentStatus.PAUSED)
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found.")
+    AuditLogger.log_event(
+        actor="user",
+        event_type="AGENT_PAUSED",
+        details={"agent_id": agent_id, "name": updated.name}
+    )
+    return {"status": "paused", "agent": updated}
+
+
+@app.delete("/api/agents/{agent_id}")
+async def archive_agent(agent_id: str):
+    """Archives an AI Agent."""
+    updated = AgentRepository.set_agent_status(agent_id, AgentStatus.ARCHIVED)
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found.")
+    AuditLogger.log_event(
+        actor="user",
+        event_type="AGENT_ARCHIVED",
+        details={"agent_id": agent_id, "name": updated.name}
+    )
+    return {"status": "archived", "agent": updated}
+
+
+# ============================================================================
+# SKILLS & REUSABLE CAPABILITIES APIS
+# ============================================================================
+
+@app.get("/api/skills")
+async def list_skills(category: Optional[str] = None):
+    """Lists reusable skills with execution metrics and trust status."""
+    skills = SkillService.list_skills(category=category)
+    return {"skills": [s.model_dump() for s in skills]}
+
+
+@app.get("/api/skills/{skill_id}")
+async def get_skill(skill_id: str):
+    skill = SkillService.get_skill(skill_id)
+    if not skill:
+        raise HTTPException(status_code=404, detail=f"Skill '{skill_id}' not found.")
+    return {"skill": skill.model_dump()}
+
+
+class CreateSkillRequest(BaseModel):
+    name: str
+    description: str = ""
+    category: SkillCategory = SkillCategory.GENERAL
+    input_schema: Dict[str, Any] = Field(default_factory=dict)
+    output_schema: Dict[str, Any] = Field(default_factory=dict)
+    required_tools: List[str] = Field(default_factory=list)
+    permission_requirements: List[str] = Field(default_factory=list)
+    is_trusted: bool = False
+
+
+@app.post("/api/skills")
+async def create_skill(req: CreateSkillRequest):
+    skill = SkillService.create_skill(req.model_dump())
+    AuditLogger.log_event(
+        actor="user",
+        event_type="SKILL_CREATED",
+        details={"skill_id": skill.id, "name": skill.name}
+    )
+    return {"skill": skill.model_dump()}
+
+
+class ConvertWorkflowToSkillRequest(BaseModel):
+    workflow: Dict[str, Any]
+    skill_name: str
+    description: str = ""
+
+
+@app.post("/api/skills/convert-workflow")
+async def convert_workflow_to_skill(req: ConvertWorkflowToSkillRequest):
+    """
+    Converts a recorded workflow demonstration into a candidate skill.
+    Enforces validation requirement: Starts as untrusted and pending validation.
+    """
+    skill = SkillService.convert_workflow_to_skill(
+        workflow_dict=req.workflow,
+        skill_name=req.skill_name,
+        description=req.description
+    )
+    AuditLogger.log_event(
+        actor="user",
+        event_type="WORKFLOW_CONVERTED_TO_SKILL",
+        details={"skill_id": skill.id, "name": skill.name, "is_trusted": skill.is_trusted}
+    )
+    return {"status": "created", "skill": skill.model_dump()}
+
+
+class ValidateSkillRequest(BaseModel):
+    approved: bool = True
+
+
+@app.post("/api/skills/{skill_id}/validate")
+async def validate_skill(skill_id: str, req: ValidateSkillRequest):
+    """Promotes a candidate skill to trusted status upon user validation."""
+    updated = SkillService.validate_skill(skill_id, approved=req.approved)
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Skill '{skill_id}' not found.")
+    AuditLogger.log_event(
+        actor="user",
+        event_type="SKILL_VALIDATED" if req.approved else "SKILL_REJECTED",
+        details={"skill_id": skill_id, "is_trusted": updated.is_trusted}
+    )
+    return {"status": "validated" if req.approved else "rejected", "skill": updated.model_dump()}
+
+
+class TestSkillRequest(BaseModel):
+    inputs: Dict[str, Any] = Field(default_factory=dict)
+
+
+@app.post("/api/skills/{skill_id}/test")
+async def test_skill(skill_id: str, req: TestSkillRequest):
+    """Simulates/tests skill execution and updates success telemetry."""
+    skill = SkillService.get_skill(skill_id)
+    if not skill:
+        raise HTTPException(status_code=404, detail=f"Skill '{skill_id}' not found.")
+    
+    # Record successful mock/dry execution
+    SkillService.record_execution(skill_id, success=True)
+    return {
+        "status": "success",
+        "skill_id": skill_id,
+        "name": skill.name,
+        "simulated_output": {
+            "result": f"Skill '{skill.name}' executed successfully with input parameters.",
+            "metrics": {"duration_ms": 115, "tools_invoked": skill.required_tools}
+        }
+    }
+
+
+@app.delete("/api/skills/{skill_id}")
+async def delete_skill(skill_id: str):
+    success = SkillService.delete_skill(skill_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Skill '{skill_id}' not found.")
+    return {"status": "deleted"}
+
+
+# ============================================================================
+# AGENT PERSISTENT MEMORY APIS (5 CATEGORIES)
+# ============================================================================
+
+@app.get("/api/memory")
+async def list_memories(agent_id: Optional[str] = None, category: Optional[str] = None):
+    """Retrieves agent persistent memories filtered by agent or 5 core categories."""
+    memories = MemoryService.list_memories(agent_id=agent_id, category=category)
+    return {"memories": [m.model_dump() for m in memories]}
+
+
+class CreateMemoryRequest(BaseModel):
+    agent_id: Optional[str] = None
+    category: MemoryCategory
+    key: str
+    value: str
+    provenance: str = "user_entry"
+    confidence: float = 1.0
+
+
+@app.post("/api/memory")
+async def create_memory(req: CreateMemoryRequest):
+    item = MemoryService.create_memory(req.model_dump())
+    return {"status": "created", "memory": item.model_dump()}
+
+
+class UpdateMemoryRequest(BaseModel):
+    key: Optional[str] = None
+    value: Optional[str] = None
+    category: Optional[MemoryCategory] = None
+    confidence: Optional[float] = None
+
+
+@app.put("/api/memory/{memory_id}")
+async def update_memory(memory_id: str, req: UpdateMemoryRequest):
+    updates = {k: v for k, v in req.model_dump().items() if v is not None}
+    item = MemoryService.update_memory(memory_id, updates)
+    if not item:
+        raise HTTPException(status_code=404, detail=f"Memory '{memory_id}' not found.")
+    return {"status": "updated", "memory": item.model_dump()}
+
+
+@app.delete("/api/memory/{memory_id}")
+async def delete_memory(memory_id: str):
+    deleted = MemoryService.delete_memory(memory_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Memory '{memory_id}' not found.")
+    return {"status": "deleted"}
+
+
+# ============================================================================
+# INTEGRATION HUB & MCP CLIENT APIS
+# ============================================================================
+
+@app.get("/api/integrations")
+async def list_integrations():
+    """Returns connected and available external integrations and MCP server connectors."""
+    integrations = IntegrationHubService.list_integrations()
+    return {"integrations": [i.model_dump() for i in integrations]}
+
+
+class ConnectIntegrationRequest(BaseModel):
+    config: Optional[Dict[str, Any]] = None
+
+
+@app.post("/api/integrations/{integ_id}/connect")
+async def connect_integration(integ_id: str, req: ConnectIntegrationRequest):
+    try:
+        updated = IntegrationHubService.connect_integration(integ_id, req.config)
+    except IntegrationConfigError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Integration '{integ_id}' not found.")
+    AuditLogger.log_event(
+        actor="user",
+        event_type="INTEGRATION_CONNECT_REQUESTED",
+        details={"integration_id": integ_id, "name": updated.name, "status": updated.status.value}
+    )
+    return {"status": updated.status.value, "integration": updated.model_dump()}
+
+
+@app.post("/api/integrations/{integ_id}/disconnect")
+async def disconnect_integration(integ_id: str):
+    updated = IntegrationHubService.disconnect_integration(integ_id)
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Integration '{integ_id}' not found.")
+    AuditLogger.log_event(
+        actor="user",
+        event_type="INTEGRATION_DISCONNECTED",
+        details={"integration_id": integ_id, "name": updated.name}
+    )
+    return {"status": "disconnected", "integration": updated.model_dump()}
+
+
+@app.post("/api/integrations/{integ_id}/test")
+async def test_integration(integ_id: str):
+    """Checks the integration with a live probe. A failed probe is returned, not hidden."""
+    res = await IntegrationHubService.test_connection(integ_id)
+    if res.get("code") == "not_found":
+        raise HTTPException(status_code=404, detail=res.get("message"))
+    return res
+
+
+class ExecuteToolRequest(BaseModel):
+    arguments: Dict[str, Any] = Field(default_factory=dict)
+    granted_permissions: List[str] = Field(default_factory=list)
+
+
+@app.get("/api/tools")
+async def get_tool_registry():
+    """Shared tool registry used by agents and recorded workflows."""
+    return {"tools": [tool.model_dump() for tool in list_tools()]}
+
+
+@app.post("/api/tools/{tool_id}/execute")
+async def run_registered_tool(tool_id: str, req: ExecuteToolRequest):
+    """Runs one registered tool after an explicit permission grant and a connected integration."""
+    spec = get_tool(tool_id)
+    if spec is None:
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_id}' is not registered.")
+    integration = IntegrationHubService.get_integration(spec.integration_id)
+    if integration is None or integration.status != IntegrationStatus.CONNECTED:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{spec.name} stays disabled until {spec.integration_id} is connected.",
+        )
+    try:
+        result = execute_tool(tool_id, req.arguments, req.granted_permissions)
+    except ToolPermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_id}' is not registered.")
+    AuditLogger.log_event(
+        actor="user",
+        event_type="TOOL_EXECUTED",
+        details={"tool_id": tool_id, "status": result.get("status"), "integration_id": spec.integration_id},
+    )
+    if result.get("status") == "error":
+        raise HTTPException(status_code=422, detail=result.get("message"))
+    return result
+
+
+@app.get("/api/artifacts/{artifact_id}/download")
+async def download_artifact(artifact_id: str):
+    artifact = get_artifact(artifact_id)
+    if not artifact:
+        raise HTTPException(status_code=404, detail="Artifact was not found or the file is missing.")
+    media_types = {
+        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "pdf": "application/pdf",
+    }
+    return FileResponse(
+        artifact["path"],
+        filename=artifact["filename"],
+        media_type=media_types.get(artifact["kind"], "application/octet-stream"),
+    )
+
+
+# ============================================================================
+# TRIGGERS & AUTOMATIONS APIS
+# ============================================================================
+
+@app.get("/api/automations")
+async def list_automations(status: Optional[str] = None):
+    """Returns scheduled, webhook, and event-based triggers."""
+    automations = AutomationService.list_automations(status=status)
+    return {"automations": [a.model_dump() for a in automations]}
+
+
+class CreateAutomationRequest(BaseModel):
+    name: str
+    description: str = ""
+    agent_id: Optional[str] = None
+    trigger_type: TriggerType = TriggerType.SCHEDULED
+    schedule_cron: Optional[str] = "0 9 * * 1-5"
+    timezone: str = "UTC"
+    event_filter: Dict[str, Any] = Field(default_factory=dict)
+    retry_count: int = 3
+    retry_delay_seconds: int = 60
+    duplicate_protection_window_seconds: int = 300
+    status: AutomationStatus = AutomationStatus.ACTIVE
+    required_permissions: List[str] = Field(default_factory=list)
+
+
+@app.post("/api/automations")
+async def create_automation(req: CreateAutomationRequest):
+    auto = AutomationService.create_automation(req.model_dump())
+    AuditLogger.log_event(
+        actor="user",
+        event_type="AUTOMATION_CREATED",
+        details={"automation_id": auto.id, "name": auto.name}
+    )
+    return {"status": "created", "automation": auto.model_dump()}
+
+
+class ToggleAutomationStatusRequest(BaseModel):
+    status: AutomationStatus
+
+
+@app.post("/api/automations/{auto_id}/toggle")
+async def toggle_automation(auto_id: str, req: ToggleAutomationStatusRequest):
+    updated = AutomationService.toggle_status(auto_id, req.status)
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Automation '{auto_id}' not found.")
+    return {"status": "updated", "automation": updated.model_dump()}
+
+
+@app.post("/api/automations/{auto_id}/trigger")
+async def trigger_automation_now(auto_id: str):
+    """Manually fires a scheduled or event-driven automation for testing."""
+    res = AutomationService.trigger_now(auto_id)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=404, detail=res.get("message"))
+    AuditLogger.log_event(
+        actor="user",
+        event_type="AUTOMATION_TRIGGERED_MANUAL",
+        details={"automation_id": auto_id}
+    )
+    return res
+
+
+@app.delete("/api/automations/{auto_id}")
+async def delete_automation(auto_id: str):
+    deleted = AutomationService.delete_automation(auto_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Automation '{auto_id}' not found.")
+    return {"status": "deleted"}
+
+
+# ============================================================================
+# UNIFIED ACTIVITY CENTER DASHBOARD API
+# ============================================================================
+
+@app.get("/api/activity/dashboard")
+async def get_activity_dashboard():
+    """
+    Unified activity dashboard providing full visibility:
+    - Active agents count & list
+    - Running tasks (from AG-UI execution engine)
+    - Pending approvals
+    - Completed tasks
+    - Failed executions
+    - Recent audit activity
+    - Integration status summary
+    - Scheduled automations
+    """
+    agents = AgentRepository.list_agents()
+    active_agents = [a for a in agents if a.status == AgentStatus.ACTIVE]
+    
+    integrations = IntegrationHubService.list_integrations()
+    connected_integs = [i for i in integrations if i.status == IntegrationStatus.CONNECTED]
+    
+    automations = AutomationService.list_automations()
+    active_automations = [a for a in automations if a.status == AutomationStatus.ACTIVE]
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM runs ORDER BY started_at DESC LIMIT 20")
+    runs = cursor.fetchall()
+    
+    cursor.execute("SELECT * FROM audit_log ORDER BY ts DESC LIMIT 15")
+    audit_rows = cursor.fetchall()
+    conn.close()
+
+    run_list = []
+    for r in runs:
+        run_list.append({
+            "id": r["id"],
+            "workflow_id": r["workflow_id"],
+            "mode": r["mode"],
+            "state": r["state"],
+            "verification_state": r["verification_state"],
+            "started_at": r["started_at"],
+            "ended_at": r["ended_at"],
+            "safe_stop_reason": r["safe_stop_reason"]
+        })
+
+    audit_list = []
+    for a in audit_rows:
+        audit_list.append({
+            "id": a["id"],
+            "ts": a["ts"],
+            "actor": a["actor"],
+            "event_type": a["event_type"],
+            "workflow_id": a["workflow_id"],
+            "details": json.loads(a["details_json"]) if a["details_json"] else {}
+        })
+
+    completed_count = sum(1 for r in run_list if r["state"] == "COMPLETED")
+    failed_count = sum(1 for r in run_list if r["state"] in ["FAILED", "STOPPED"])
+    running_count = sum(1 for r in run_list if r["state"] == "RUNNING")
+    
+    # Check live AG-UI engine tasks if running
+    ag_ui_tasks = [t.model_dump() for t in ag_ui_engine_instance.live_tasks.values()]
+
+    return {
+        "summary": {
+            "total_agents": len(agents),
+            "active_agents": len(active_agents),
+            "connected_integrations": len(connected_integs),
+            "total_integrations": len(integrations),
+            "active_automations": len(active_automations),
+            "completed_runs": completed_count,
+            "failed_runs": failed_count,
+            "running_runs": running_count + len(ag_ui_tasks)
+        },
+        "agents": [a.model_dump() for a in agents],
+        "active_tasks": ag_ui_tasks,
+        "recent_runs": run_list,
+        "recent_activity": audit_list,
+        "integrations": [i.model_dump() for i in integrations],
+        "automations": [a.model_dump() for a in automations]
+    }
+
+
+

@@ -15,11 +15,9 @@ const sectionCopy: Record<string, string> = {
     "Follow each run and confirm sensitive actions.",
   "Activity & Audit":
     "Review past approvals and workflow activity.",
-    "Test Site Sandbox":
-    "Try a workflow in a protected sample space.",
   Activity:
     "Activity history will appear here.",
-  Settings:
+  Integrations:
     "Manage your workspace preferences.",
 };
 

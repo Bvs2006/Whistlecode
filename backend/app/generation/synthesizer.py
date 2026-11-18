@@ -34,77 +34,53 @@ class WorkflowSynthesizer:
         """
         clarifications: List[ClarificationQuestion] = []
         step_idx = 1
+        goal = session.task_description.lower()
+        ranking_is_explicit = bool(re.search(r"\b(highest rated|best rated|rating|stars?|cheapest|lowest price|budget|price range|nearest|closest|distance|exact (?:item|product|name))\b", goal))
+        synthesized_event_types = {EventType.NAVIGATE, EventType.INPUT, EventType.CLICK, EventType.SUBMIT}
 
         for evt in session.events:
+            # Keep question IDs aligned with the exact step sequence generated below.
+            # Key presses and other observer-only events do not become workflow steps.
+            if evt.type not in synthesized_event_types:
+                continue
             step_id = f"s{step_idx}"
             target_name = (evt.target.name or evt.target.test_id or evt.target.text or "").lower() if evt.target else ""
+            target_label = (evt.target.name or evt.target.label or evt.target.text or evt.target.test_id or "this choice") if evt.target else "this choice"
 
             # 1. Selection in list / restaurant / catalog choice
-            if evt.type == EventType.CLICK and any(k in target_name for k in ["restaurant", "bistro", "trattoria", "item", "select", "sku", "choose", "row"]):
+            is_choice = any(k in target_name for k in ["restaurant", "bistro", "trattoria", "product", "item", "sku", "option", "result", "listing", "hotel", "flight", "venue"])
+            if evt.type == EventType.CLICK and is_choice and not ranking_is_explicit:
                 clarifications.append(ClarificationQuestion(
                     id=f"clarify_{step_id}_intent",
                     step_id=step_id,
-                    question="Did you choose this item/restaurant because of price, distance or rating?",
-                    explanation=f"You clicked '{evt.target.name or evt.target.text}' from a list of options without an explicit prior sort or filter.",
+                    question=f"For “{target_label}”, what should determine the choice: price, distance or rating?",
+                    explanation="Your task description does not specify a selection rule. This answer will guide the workflow draft; it will not authorize any action.",
                     options=[
                         "Rating (Highest rated >= 4.5)",
                         "Price (Budget / lowest price tier)",
                         "Distance (Closest to current location)",
                         "Exact item name (Specific hardcoded choice)"
                     ],
-                    selected_option="Rating (Highest rated >= 4.5)",
-                    context=f"Target: {evt.target.name or evt.target.text}"
+                    context=f"Recorded step {step_idx}: {target_label}"
                 ))
 
             # 2. Form Input: Parameter vs Fixed
-            elif evt.type == EventType.INPUT and evt.value:
+            elif evt.type == EventType.INPUT and evt.value and not evt.is_masked:
                 clean_name = re.sub(r'[^a-zA-Z0-9_]', ' ', target_name).strip()
+                field_name = clean_name or "this field"
                 clarifications.append(ClarificationQuestion(
                     id=f"clarify_{step_id}_param",
                     step_id=step_id,
-                    question=f"Should '{evt.value}' for {clean_name or 'this field'} be a reusable parameter for future runs?",
-                    explanation="Demonstrated values can be converted into variable parameters or kept as fixed constants.",
+                    question=f"How should the value entered in {field_name} be handled on future runs?",
+                    explanation="Choose whether to ask for a fresh value each time or keep this non-sensitive value fixed.",
                     options=[
-                        f"Yes, parameterize as '{{{{{clean_name.replace(' ', '_')}}}}}'",
-                        f"No, keep '{evt.value}' constant on every run",
-                        "Conditional (Only fill if field is empty)"
+                        f"Ask me for a fresh {field_name} value on each run",
+                        "Keep the demonstrated value fixed"
                     ],
-                    selected_option=f"Yes, parameterize as '{{{{{clean_name.replace(' ', '_')}}}}}'",
-                    context=f"Field: {clean_name}, Value: {evt.value}"
-                ))
-
-            # 3. High-risk submit / consequential action
-            elif evt.type == EventType.SUBMIT or (evt.type == EventType.CLICK and any(k in target_name for k in ["save", "submit", "create", "delete", "buy", "order"])):
-                clarifications.append(ClarificationQuestion(
-                    id=f"clarify_{step_id}_confirmation",
-                    step_id=step_id,
-                    question=f"Do you want an interactive confirmation gate before executing '{evt.target.name or 'Submit'}'?",
-                    explanation="Consequential actions can pause and require explicit user approval before submitting.",
-                    options=[
-                        "Require confirmation gate (Safe default for high risk)",
-                        "Execute automatically without pausing",
-                        "Dry-run simulation only"
-                    ],
-                    selected_option="Require confirmation gate (Safe default for high risk)",
-                    context=f"Action: {target_name}"
+                    context=f"Recorded step {step_idx}: {field_name}"
                 ))
 
             step_idx += 1
-
-        # If no specific ambiguities were found, add a general task parametrization question
-        if not clarifications:
-            clarifications.append(ClarificationQuestion(
-                id="clarify_general_scope",
-                step_id="general",
-                question="How reusable should this workflow be across different environments?",
-                explanation="Configure whether target domain and input parameters should be strictly locked or dynamically injected.",
-                options=[
-                    "Fully parameterized (Inputs accept dynamic runtime variables)",
-                    "Strictly scoped (Run only on permitted origin with default inputs)",
-                    "One-time template"
-                ],
-                selected_option="Fully parameterized (Inputs accept dynamic runtime variables)"
-            ))
 
         return clarifications
 
@@ -175,7 +151,7 @@ class WorkflowSynthesizer:
                 clarify_key = f"clarify_{step_id}_param"
                 answer = answers.get(clarify_key, "")
 
-                if "keep" in answer.lower() and "constant" in answer.lower():
+                if "keep" in answer.lower() and ("constant" in answer.lower() or "fixed" in answer.lower()):
                     # User answered: Keep constant
                     step_val = evt.value if not evt.is_masked else ""
                 else:

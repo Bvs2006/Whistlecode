@@ -3,13 +3,14 @@ import { api } from "../../api/client";
 import type { PluginManifest, ToolDefinition } from "../../types";
 
 const integrations = [
-  { name: "Gmail", icon: "✉", group: "Email", description: "Find messages, summarize threads, and prepare replies.", tone: "gold" },
-  { name: "Google Calendar", icon: "▦", group: "Calendar", description: "Review availability and prepare event changes for approval.", tone: "green" },
-  { name: "Outlook", icon: "✉", group: "Email & calendar", description: "Work with mail and meetings in your Outlook account.", tone: "blue" },
-  { name: "Google Drive", icon: "▱", group: "Files", description: "Find, organize, and prepare updates to your documents.", tone: "green" },
-  { name: "Slack", icon: "⌘", group: "Messages", description: "Find conversations and prepare messages for review.", tone: "purple" },
-  { name: "Notion", icon: "N", group: "Knowledge", description: "Search and organize notes, pages, and team knowledge.", tone: "neutral" },
+  { name: "Gmail", icon: "✉", group: "Email", category: "Communication", description: "Find messages, summarize threads, and prepare replies.", tone: "gold" },
+  { name: "Google Calendar", icon: "▦", group: "Calendar", category: "Productivity", description: "Review availability and prepare event changes for approval.", tone: "green" },
+  { name: "Outlook", icon: "✉", group: "Email & calendar", category: "Communication", description: "Work with mail and meetings in your Outlook account.", tone: "blue" },
+  { name: "Google Drive", icon: "▱", group: "Files", category: "File sharing", description: "Find, organize, and prepare updates to your documents.", tone: "green" },
+  { name: "Slack", icon: "⌘", group: "Messages", category: "Communication", description: "Find conversations and prepare messages for review.", tone: "purple" },
+  { name: "Notion", icon: "N", group: "Knowledge", category: "Productivity", description: "Search and organize notes, pages, and team knowledge.", tone: "neutral" },
 ];
+const integrationCategories = ["All", "Productivity", "File sharing", "Communication"];
 
 export const PluginManagerView: React.FC = () => {
   const [plugins, setPlugins] = useState<PluginManifest[]>([]);
@@ -27,6 +28,9 @@ export const PluginManagerView: React.FC = () => {
   const [executing, setExecuting] = useState(false);
   const [toolApproval, setToolApproval] = useState<{ id: string; expiresAt: string } | null>(null);
   const [selectedIntegration, setSelectedIntegration] = useState<(typeof integrations)[number] | null>(null);
+  const [integrationCategory, setIntegrationCategory] = useState("All");
+  const [integrationStatus, setIntegrationStatus] = useState<"All applications" | "Connected" | "Disconnected">("All applications");
+  const [integrationSearch, setIntegrationSearch] = useState("");
 
   // New plugin registration state
   const [showRegisterModal, setShowRegisterModal] = useState(false);
@@ -128,6 +132,13 @@ export const PluginManagerView: React.FC = () => {
     }
   };
 
+  const visibleIntegrations = integrations.filter((item) => {
+    const matchesCategory = integrationCategory === "All" || item.category === integrationCategory;
+    const matchesStatus = integrationStatus !== "Connected";
+    const matchesSearch = `${item.name} ${item.group} ${item.description}`.toLowerCase().includes(integrationSearch.trim().toLowerCase());
+    return matchesCategory && matchesStatus && matchesSearch;
+  });
+
   return (
     <div className="card-panel">
       <div className="panel-header-row">
@@ -152,12 +163,21 @@ export const PluginManagerView: React.FC = () => {
           <div>
             <span className="integration-eyebrow">YOUR EVERYDAY TOOLS</span>
             <h3 id="integration-heading">Integrations</h3>
-            <p>Bring your work apps into one place. Every connected action will remain visible and approval controlled.</p>
+            <p>Choose the tools you want to use with WhistleCode. Connections require secure account authorization before any data can be accessed.</p>
           </div>
           <span className="integration-count">{integrations.length} integrations</span>
         </div>
-        <div className="integration-grid">
-          {integrations.map((item, index) => (
+        <nav className="integration-category-tabs" aria-label="Integration categories">
+          {integrationCategories.map((category) => <button type="button" key={category} className={integrationCategory === category ? "active" : ""} onClick={() => setIntegrationCategory(category)} aria-pressed={integrationCategory === category}>{category}</button>)}
+        </nav>
+        <div className="integration-toolbar">
+          <div className="integration-status-tabs" role="group" aria-label="Filter integrations by connection status">
+            {(["All applications", "Connected", "Disconnected"] as const).map((status) => <button type="button" key={status} className={integrationStatus === status ? "active" : ""} onClick={() => setIntegrationStatus(status)} aria-pressed={integrationStatus === status}>{status}</button>)}
+          </div>
+          <label className="integration-search"><span aria-hidden="true">⌕</span><input aria-label="Search integrations" value={integrationSearch} onChange={(event) => setIntegrationSearch(event.target.value)} placeholder="Search integrations" /></label>
+        </div>
+        {visibleIntegrations.length ? <div className="integration-grid">
+          {visibleIntegrations.map((item, index) => (
             <article className="integration-card" key={item.name} style={{ animationDelay: `${index * 55}ms` }}>
               <div className="integration-card-top">
                 <span className={`integration-app-icon integration-${item.tone}`} aria-hidden="true">{item.icon}</span>
@@ -171,7 +191,7 @@ export const PluginManagerView: React.FC = () => {
               </button>
             </article>
           ))}
-        </div>
+        </div> : <div className="integration-empty-state">{integrationStatus === "Connected" ? "No integrations are connected yet." : "No integrations match your search."}</div>}
         <div className="integration-footnote"><span aria-hidden="true">✳</span> Connections are not active yet. Account sign-in and secure authorization need to be configured before these apps can access your data.</div>
       </section>
 

@@ -41,6 +41,62 @@ def test_clarification_dialogue_identifies_restaurant_ambiguity():
     assert any("Rating" in opt for opt in q.options)
     assert any("Price" in opt for opt in q.options)
     assert any("Distance" in opt for opt in q.options)
+    assert q.selected_option is None
+
+
+def test_unambiguous_recording_does_not_get_an_unrelated_generic_question():
+    session = RecordingSession(
+        id="rec_simple_task",
+        created_at="2026-10-20T12:00:00Z",
+        task_description="Open the account dashboard",
+        target_url="https://example.com/",
+        events=[RecordedEvent(
+            id="e1", recording_id="rec_simple_task", timestamp=1.0,
+            type=EventType.NAVIGATE, url="https://example.com/", value="https://example.com/"
+        )],
+    )
+
+    assert WorkflowSynthesizer().generate_clarifications(session) == []
+
+
+def test_recorded_input_question_uses_synthesized_step_id_and_does_not_echo_value():
+    session = RecordingSession(
+        id="rec_step_alignment",
+        created_at="2026-10-20T12:00:00Z",
+        task_description="Search the site",
+        target_url="https://example.com/",
+        events=[
+            RecordedEvent(id="e1", recording_id="rec_step_alignment", timestamp=1.0,
+                          type=EventType.NAVIGATE, url="https://example.com/", value="https://example.com/"),
+            RecordedEvent(id="e2", recording_id="rec_step_alignment", timestamp=2.0,
+                          type=EventType.KEYPRESS, url="https://example.com/", value="Enter"),
+            RecordedEvent(id="e3", recording_id="rec_step_alignment", timestamp=3.0,
+                          type=EventType.INPUT, url="https://example.com/", value="private search term",
+                          target=TargetDescriptor(name="Search field", role="textbox")),
+        ],
+    )
+
+    questions = WorkflowSynthesizer().generate_clarifications(session)
+    assert len(questions) == 1
+    assert questions[0].id == "clarify_s2_param"
+    assert "private search term" not in questions[0].question
+    assert questions[0].selected_option is None
+
+
+def test_explicit_selection_rule_does_not_ask_again():
+    session = RecordingSession(
+        id="rec_explicit_choice",
+        created_at="2026-10-20T12:00:00Z",
+        task_description="Choose the highest rated restaurant",
+        target_url="https://example.com/",
+        events=[RecordedEvent(
+            id="e1", recording_id="rec_explicit_choice", timestamp=1.0,
+            type=EventType.CLICK, url="https://example.com/",
+            target=TargetDescriptor(name="Bistro Roma restaurant", role="link"),
+        )],
+    )
+
+    assert WorkflowSynthesizer().generate_clarifications(session) == []
 
 
 def test_reusable_workflow_synthesis_incorporates_clarification_answer():

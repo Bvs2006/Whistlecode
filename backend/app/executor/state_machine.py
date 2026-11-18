@@ -203,7 +203,11 @@ class WorkflowExecutor:
                 step=step,
                 current_url=current_url,
                 approval=approval_record,
-                actions_executed_count=actions_count
+                actions_executed_count=actions_count,
+                # Dry runs are non-executable previews. Validate destinations
+                # against this workflow's declared scope, just as the plan
+                # preview endpoint does; live runs still use the signed grant.
+                declared_origins=workflow.allowed_origins if mode == "dry_run" else None,
             )
 
             AuditLogger.log_event(

@@ -17,7 +17,8 @@ export const ClarificationModal: React.FC<Props> = ({
   const [answers, setAnswers] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
     clarifications.forEach((q) => {
-      init[q.id] = q.selected_option || "";
+      // A suggested option is model output, not the user's decision.
+      init[q.id] = "";
     });
     return init;
   });

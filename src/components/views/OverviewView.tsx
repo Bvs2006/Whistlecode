@@ -46,7 +46,7 @@ export const OverviewView: React.FC<Props> = ({ onNavigate, onSelectWorkflow, on
     <section className="workspace-home">
       <div className="home-welcome">
         <div>
-          <span className="home-eyebrow">WHISTLECODE WORKSPACE</span>
+          <span className="home-eyebrow">WHISTLEROOM</span>
           <h1>Make room for better work.</h1>
           <p>Describe a task, or teach WhistleCode by showing it the steps.</p>
         </div>
@@ -65,13 +65,22 @@ export const OverviewView: React.FC<Props> = ({ onNavigate, onSelectWorkflow, on
 
       <div className="home-quick-actions">
         <button className="home-action-card" type="button" onClick={() => onNavigate("Teach a Task")}>
-          <span className="home-action-icon">◉</span><span><b>Teach a task</b><small>Record reviewed steps and turn them into a draft.</small></span><i>↗</i>
+          <span className="home-action-icon">◉</span><span><b>Teach a task</b><small>Record a real website task and review its steps.</small></span><i>↗</i>
+        </button>
+        <button className="home-action-card" type="button" onClick={() => onNavigate("Templates")}>
+          <span className="home-action-icon amber">✨</span><span><b>Workflow templates</b><small>Ready-to-run unattended recipes to copy.</small></span><i>↗</i>
         </button>
         <button className="home-action-card" type="button" onClick={() => onNavigate("My Workflows")}>
-          <span className="home-action-icon amber">⌘</span><span><b>Manage workflows</b><small>Edit plans, set scope, and save versions.</small></span><i>↗</i>
+          <span className="home-action-icon amber">☷</span><span><b>My workflows</b><small>Edit plans, review scope, and save versions.</small></span><i>↗</i>
+        </button>
+        <button className="home-action-card" type="button" onClick={() => onNavigate("Permissions")}>
+          <span className="home-action-icon">◇</span><span><b>Permissions</b><small>Review and manage approval for a workflow.</small></span><i>↗</i>
+        </button>
+        <button className="home-action-card" type="button" onClick={() => onNavigate("Live Run")}>
+          <span className="home-action-icon amber">▷</span><span><b>Live run</b><small>Inspect a permitted workflow execution.</small></span><i>↗</i>
         </button>
         <button className="home-action-card" type="button" onClick={() => onNavigate("Activity")}>
-          <span className="home-action-icon">≋</span><span><b>Review activity</b><small>Inspect approval and execution decisions.</small></span><i>↗</i>
+          <span className="home-action-icon">≋</span><span><b>Activity</b><small>Inspect workflow and approval history.</small></span><i>↗</i>
         </button>
       </div>
 

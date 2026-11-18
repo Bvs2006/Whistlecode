@@ -5,9 +5,10 @@ import type { RecordingSession, WorkflowDefinition, ClarificationQuestion } from
 
 type Props = {
   onWorkflowGenerated: (wf: WorkflowDefinition) => void;
+  initialPreset?: { url: string; description: string } | null;
 };
 
-export const RecordingStudio: React.FC<Props> = ({ onWorkflowGenerated }) => {
+export const RecordingStudio: React.FC<Props> = ({ onWorkflowGenerated, initialPreset }) => {
   const [targetUrl, setTargetUrl] = useState("");
   const [taskDesc, setTaskDesc] = useState("");
   const [isRecording, setIsRecording] = useState(false);
@@ -22,10 +23,18 @@ export const RecordingStudio: React.FC<Props> = ({ onWorkflowGenerated }) => {
 
   // Clarifications state
   const [clarifications, setClarifications] = useState<ClarificationQuestion[]>([]);
+  const [clarificationHistory, setClarificationHistory] = useState<ClarificationQuestion[]>([]);
+  const [clarificationAnswers, setClarificationAnswers] = useState<Record<string, string>>({});
   const [showClarificationModal, setShowClarificationModal] = useState(false);
 
   // Screenshot modal preview
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!initialPreset) return;
+    setTargetUrl(initialPreset.url);
+    setTaskDesc(initialPreset.description);
+  }, [initialPreset]);
 
   // Poll current session & active window while recording
   useEffect(() => {
@@ -82,6 +91,8 @@ export const RecordingStudio: React.FC<Props> = ({ onWorkflowGenerated }) => {
           const cRes = await api.getClarifications(res.session.id);
           if (cRes.clarifications && cRes.clarifications.length > 0) {
             setClarifications(cRes.clarifications);
+            setClarificationHistory(cRes.clarifications);
+            setClarificationAnswers({});
             setShowClarificationModal(true);
           }
         } catch (ce) {
@@ -97,12 +108,28 @@ export const RecordingStudio: React.FC<Props> = ({ onWorkflowGenerated }) => {
 
   const handleClarificationConfirm = async (answers: Record<string, string>) => {
     if (!currentSession) return;
+    const mergedAnswers = { ...clarificationAnswers, ...answers };
+    const questionHistory = [...clarificationHistory];
+    for (const question of clarifications) {
+      if (!questionHistory.some((item) => item.id === question.id)) questionHistory.push(question);
+    }
+    setClarificationAnswers(mergedAnswers);
+    setClarificationHistory(questionHistory);
     setLoading(true);
     try {
-      const res = await api.synthesizeWorkflow(currentSession.id, answers);
-      setShowClarificationModal(false);
+      const res = await api.synthesizeWorkflow(currentSession.id, mergedAnswers, questionHistory);
+      if (res.status === "clarification_needed" && res.clarifications?.length) {
+        const nextQuestions = res.clarifications as ClarificationQuestion[];
+        setClarifications(nextQuestions);
+        setClarificationHistory([...questionHistory, ...nextQuestions.filter((item) => !questionHistory.some((old) => old.id === item.id))]);
+        setShowClarificationModal(true);
+        return;
+      }
       if (res.workflow) {
+        setShowClarificationModal(false);
         onWorkflowGenerated(res.workflow);
+      } else {
+        throw new Error("WhistleCode could not prepare a workflow draft from the reviewed recording.");
       }
     } catch (err: any) {
       setError(err.message || "Failed to synthesize workflow with clarification answers");
@@ -119,6 +146,8 @@ export const RecordingStudio: React.FC<Props> = ({ onWorkflowGenerated }) => {
       const cRes = await api.getClarifications(currentSession.id);
       if (cRes.clarifications && cRes.clarifications.length > 0) {
         setClarifications(cRes.clarifications);
+        setClarificationHistory(cRes.clarifications);
+        setClarificationAnswers({});
         setShowClarificationModal(true);
         setLoading(false);
         return;
@@ -127,6 +156,14 @@ export const RecordingStudio: React.FC<Props> = ({ onWorkflowGenerated }) => {
       const res = await api.synthesizeWorkflow(currentSession.id);
       if (res.workflow) {
         onWorkflowGenerated(res.workflow);
+      } else if (res.status === "clarification_needed" && res.clarifications?.length) {
+        const nextQuestions = res.clarifications as ClarificationQuestion[];
+        setClarifications(nextQuestions);
+        setClarificationHistory(nextQuestions);
+        setClarificationAnswers({});
+        setShowClarificationModal(true);
+      } else {
+        throw new Error("WhistleCode could not prepare a workflow draft from the reviewed recording.");
       }
     } catch (err: any) {
       setError(err.message || "Failed to synthesize workflow");
@@ -155,6 +192,11 @@ export const RecordingStudio: React.FC<Props> = ({ onWorkflowGenerated }) => {
         <li><span>2</span><div><strong>Record your task</strong><small>Use the separate browser window to perform the task, then return here and stop recording.</small></div></li>
         <li><span>3</span><div><strong>Review before running</strong><small>Inspect the captured steps, edit the workflow, then approve its website scope and permissions.</small></div></li>
       </ol>
+
+      <div className="recording-reuse-note">
+        <span aria-hidden="true">↻</span>
+        <p><strong>Make it reusable.</strong> Record a browser, Docs, or PowerPoint task once, review and save its workflow, then ask for that saved task again in Ask AI. Every run still follows its saved website scope and approval rules.</p>
+      </div>
 
       {error && <div className="error-banner">⚠️ {error}</div>}
 
@@ -188,11 +230,12 @@ export const RecordingStudio: React.FC<Props> = ({ onWorkflowGenerated }) => {
           />
         </div>
         <div className="input-group">
-            <label>What should the workflow do?</label>
-          <input
-            type="text"
+            <label>Describe the work you want to demonstrate</label>
+          <textarea
             value={taskDesc}
             onChange={(e) => setTaskDesc(e.target.value)}
+            placeholder="Example: Search for Acme in the CRM, open the first matching account, and export its latest activity."
+            rows={3}
             disabled={isRecording}
           />
         </div>
@@ -336,6 +379,7 @@ export const RecordingStudio: React.FC<Props> = ({ onWorkflowGenerated }) => {
       {/* CLARIFICATION DIALOGUE MODAL */}
       {showClarificationModal && (
         <ClarificationModal
+          key={clarifications.map((question) => question.id).join(":")}
           clarifications={clarifications}
           onConfirm={handleClarificationConfirm}
           onCancel={() => setShowClarificationModal(false)}

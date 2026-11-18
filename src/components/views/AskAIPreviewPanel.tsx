@@ -1,7 +1,9 @@
 import React, { useState } from "react";
 import { WorkflowGraph } from "../editor/WorkflowGraph";
 import { CodeBlock, MarkdownMessage } from "../common/MarkdownMessage";
+import { LiveTaskBoard } from "../ag_ui/LiveTaskBoard";
 import type { WorkflowDefinition } from "../../types";
+import type { AgUiTask, InterruptPayload } from "../../services/agUiStream";
 
 export type AskAIArtifact =
   | { id: string; kind: "workflow"; title: string; workflow: WorkflowDefinition; updatedAt: number }
@@ -21,9 +23,36 @@ type Props = {
   onClose: () => void;
   onWorkflowChange: (artifactId: string, workflow: WorkflowDefinition) => void;
   onOpenRun: () => void;
+  liveAgUiTasks?: AgUiTask[];
+  liveStepIndex?: number;
+  liveProgress?: number;
+  liveStatusText?: string;
+  isAgUiRunning?: boolean;
+  liveInterrupt?: InterruptPayload | null;
+  onApproveInterrupt?: (interruptId: string) => void;
+  onDenyInterrupt?: (interruptId: string) => void;
 };
 
-export const AskAIPreviewPanel: React.FC<Props> = ({ artifacts, selectedId, width, expanded, onSelect, onResize, onExpand, onClose, onWorkflowChange, onOpenRun }) => {
+export const AskAIPreviewPanel: React.FC<Props> = ({
+  artifacts,
+  selectedId,
+  width,
+  expanded,
+  onSelect,
+  onResize,
+  onExpand,
+  onClose,
+  onWorkflowChange,
+  onOpenRun,
+  liveAgUiTasks,
+  liveStepIndex = 0,
+  liveProgress = 0,
+  liveStatusText = "Ready",
+  isAgUiRunning = false,
+  liveInterrupt = null,
+  onApproveInterrupt = () => {},
+  onDenyInterrupt = () => {},
+}) => {
   const [webRefreshKey, setWebRefreshKey] = useState(0);
   const [showSource, setShowSource] = useState(false);
   const active = artifacts.find((artifact) => artifact.id === selectedId) || artifacts[0];
@@ -61,14 +90,47 @@ export const AskAIPreviewPanel: React.FC<Props> = ({ artifacts, selectedId, widt
           <div className="ask-ai-artifact-subhead"><span>Generated document · Markdown</span><button type="button" onClick={() => void navigator.clipboard.writeText(active.content).catch(() => undefined)}>Copy text</button></div>
           <article className="ask-ai-document-preview"><MarkdownMessage text={active.content} /></article>
         </>}
-        {active.kind === "task" && <>
-          <div className="ask-ai-task-state"><span className={`task-state-dot state-${active.status.toLowerCase()}`} /><div><small>EXECUTION STATUS</small><strong>{active.status.replaceAll("_", " ")}</strong>{active.verification && <span>{active.verification.replaceAll("_", " ")}</span>}</div><button type="button" onClick={onOpenRun}>Open run details</button></div>
-          <div className="ask-ai-task-progress"><span style={{ width: `${active.status === "SUCCESS" ? 100 : Math.min(92, Math.max(8, active.steps.length * 16))}%` }} /></div>
-          <h3>Recent steps</h3>
-          <ol className="ask-ai-task-log">{active.steps.map((step, index) => <li key={`${index}-${step.action}`}><span>{step.passed ? "✓" : "·"}</span><strong>{step.action || `Step ${index + 1}`}</strong>{step.error_message && <small>{step.error_message}</small>}</li>)}</ol>
-          {active.safeStopReason && <div className="ask-ai-task-error" role="status">{active.safeStopReason}</div>}
-          {!active.steps.length && <p className="ask-ai-preview-footnote">Waiting for the first execution update…</p>}
-        </>}
+        {active.kind === "task" && (
+          liveAgUiTasks && liveAgUiTasks.length > 0 ? (
+            <LiveTaskBoard
+              tasks={liveAgUiTasks}
+              currentStepIndex={liveStepIndex}
+              progressPercent={liveProgress}
+              isRunning={isAgUiRunning}
+              statusText={liveStatusText}
+              interrupt={liveInterrupt}
+              onApproveInterrupt={onApproveInterrupt}
+              onDenyInterrupt={onDenyInterrupt}
+            />
+          ) : (
+            <>
+              <div className="ask-ai-task-state">
+                <span className={`task-state-dot state-${active.status.toLowerCase()}`} />
+                <div>
+                  <small>EXECUTION STATUS</small>
+                  <strong>{active.status.replaceAll("_", " ")}</strong>
+                  {active.verification && <span>{active.verification.replaceAll("_", " ")}</span>}
+                </div>
+                <button type="button" onClick={onOpenRun}>Open run details</button>
+              </div>
+              <div className="ask-ai-task-progress">
+                <span style={{ width: `${active.status === "SUCCESS" ? 100 : Math.min(92, Math.max(8, active.steps.length * 16))}%` }} />
+              </div>
+              <h3>Recent steps</h3>
+              <ol className="ask-ai-task-log">
+                {active.steps.map((step, index) => (
+                  <li key={`${index}-${step.action}`}>
+                    <span>{step.passed ? "✓" : "·"}</span>
+                    <strong>{step.action || `Step ${index + 1}`}</strong>
+                    {step.error_message && <small>{step.error_message}</small>}
+                  </li>
+                ))}
+              </ol>
+              {active.safeStopReason && <div className="ask-ai-task-error" role="status">{active.safeStopReason}</div>}
+              {!active.steps.length && <p className="ask-ai-preview-footnote">Waiting for the first execution update…</p>}
+            </>
+          )
+        )}
       </div>
     </aside>
   );

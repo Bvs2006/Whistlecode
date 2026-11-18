@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Header } from "./components/Header";
 import { Sidebar } from "./components/Sidebar";
 import { AskAIView } from "./components/views/AskAIView";
@@ -11,7 +11,15 @@ import { PluginManagerView } from "./components/plugins/PluginManagerView";
 import { AuditTrailViewer } from "./components/audit/AuditTrailViewer";
 import type { AppSection, WorkflowDefinition, ApprovalRecord } from "./types";
 import { LandingPage } from "./components/LandingPage";
-import { PaperOrganizerSandboxView } from "./components/views/PaperOrganizerSandboxView";
+import { ArtifactsView } from "./components/views/ArtifactsView";
+import { ChronicleCommandCenter } from "./components/ag_ui/ChronicleCommandCenter";
+import { AgentStudioView } from "./components/agents/AgentStudioView";
+import { SkillsAndMemoryView } from "./components/skills/SkillsAndMemoryView";
+import { IntegrationHubView } from "./components/integrations/IntegrationHubView";
+import { AutomationsView } from "./components/automations/AutomationsView";
+import { UnifiedActivityCenter } from "./components/activity/UnifiedActivityCenter";
+import { WorkflowTemplatesView } from "./components/templates/WorkflowTemplatesView";
+import { SettingsView } from "./components/views/SettingsView";
 
 const createEmptyWorkflow = (): WorkflowDefinition => ({
   workflow_id: `wf_${crypto.randomUUID()}`,
@@ -26,18 +34,32 @@ const createEmptyWorkflow = (): WorkflowDefinition => ({
   change_summary: "New workflow draft",
 });
 
+type AskAICommand =
+  | { kind: "new-chat"; id: number }
+  | { kind: "open-thread"; threadId: string; id: number };
+type AskAIAction = { kind: "new-chat" } | { kind: "open-thread"; threadId: string };
+
 export function App() {
-  const [activeSection, setActiveSection] = useState<AppSection>("Overview");
+  const [theme, setTheme] = useState<"dark" | "light">(() => localStorage.getItem("whistlecode.theme") === "light" ? "light" : "dark");
+  const [activeSection, setActiveSection] = useState<AppSection>("Ask AI");
   const [initialGoal, setInitialGoal] = useState("");
   const [currentWorkflow, setCurrentWorkflow] = useState<WorkflowDefinition>(createEmptyWorkflow);
   const [activeApproval, setActiveApproval] = useState<ApprovalRecord | null>(null);
   const [showWorkspace, setShowWorkspace] = useState(false);
+  const [recordingPreset, setRecordingPreset] = useState<{ url: string; description: string } | null>(null);
+  const [askAICommand, setAskAICommand] = useState<AskAICommand | null>(null);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem("whistlecode.theme", theme); } catch { /* Theme preference is optional. */ }
+  }, [theme]);
 
   const handleWorkflowGenerated = (wf: WorkflowDefinition) => {
     setCurrentWorkflow(wf);
     setActiveApproval(null);
     setActiveSection("My Workflows");
     setInitialGoal("");
+    setRecordingPreset(null);
   };
 
   const handleWorkflowSaved = (wf: WorkflowDefinition) => {
@@ -54,26 +76,37 @@ export function App() {
     setActiveSection(sec);
   };
 
-  if (!showWorkspace) return <LandingPage onLaunch={() => setShowWorkspace(true)} />;
+  const handleAskAIAction = (action: AskAIAction) => {
+    setActiveSection("Ask AI");
+    setAskAICommand((current) => ({ ...action, id: (current?.id || 0) + 1 }) as AskAICommand);
+  };
+
+  if (!showWorkspace) return <LandingPage onLaunch={(prompt) => {
+    setInitialGoal(prompt || "");
+    setActiveSection("Ask AI");
+    setShowWorkspace(true);
+  }} />;
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-theme={theme}>
       {/* 1. LEFT SIDEBAR (Image 1 style) */}
       <Sidebar
         activeSection={activeSection}
+        theme={theme}
         onNavigate={handleNavigate}
+        onAskAIAction={handleAskAIAction}
+        onToggleTheme={() => setTheme((current) => current === "dark" ? "light" : "dark")}
       />
 
       {/* 2. MAIN VIEWPORT */}
       <main className="main-viewport">
         {/* Sleek 10-Stage Lifecycle Ribbon */}
-        <Header
+        {activeSection !== "Ask AI" && <Header
           activeSection={activeSection}
-          onNavigateSection={handleNavigate}
-        />
+        />}
 
-        {/* 1. IMAGE 1: OVERVIEW */}
-        {activeSection === "Overview" && (
+        {/* 1. WORKSPACE / OVERVIEW */}
+        {(activeSection === "Overview" || activeSection === "Workspace") && (
           <OverviewView
             onNavigate={handleNavigate}
             onAskGoal={(goal) => { setInitialGoal(goal); setActiveSection("Ask AI"); }}
@@ -85,13 +118,59 @@ export function App() {
           />
         )}
 
-        {/* 2. IMAGE 2: TEACH A TASK */}
-        {activeSection === "Teach a Task" && (
-          <RecordingStudio onWorkflowGenerated={handleWorkflowGenerated} />
+        {/* WORKFLOW TEMPLATES (CADDI AI INSPIRED) */}
+        {activeSection === "Templates" && (
+          <WorkflowTemplatesView
+            onUseTemplate={(wf) => {
+              setCurrentWorkflow(wf);
+              setActiveApproval(null);
+              setActiveSection("My Workflows");
+            }}
+            onRecordDemonstration={(preset) => {
+              setRecordingPreset(preset);
+              setActiveSection("Teach");
+            }}
+            onNavigateSection={handleNavigate}
+          />
         )}
 
-        {/* 3. IMAGE 3: WORKFLOW BUILDER */}
-        {activeSection === "My Workflows" && (
+        {/* AI AGENT STUDIO */}
+        {activeSection === "Agents" && (
+          <AgentStudioView
+            onRunAgent={(agent) => {
+              if (agent.workflow_plan) {
+                setCurrentWorkflow(agent.workflow_plan);
+                setActiveApproval(null);
+                setActiveSection("Live Run");
+              } else {
+                setInitialGoal(`Run agent '${agent.name}': ${agent.description}`);
+                setActiveSection("Ask AI");
+              }
+            }}
+            onNavigateToAskAI={(prompt) => {
+              setInitialGoal(prompt);
+              setActiveSection("Ask AI");
+            }}
+          />
+        )}
+
+        {/* 2. TEACH A TASK / RECORDING STUDIO (PRESERVED) */}
+        {(activeSection === "Teach a Task" || activeSection === "Teach" || activeSection === "Recording Studio") && (
+          <RecordingStudio onWorkflowGenerated={handleWorkflowGenerated} initialPreset={recordingPreset} />
+        )}
+
+        {/* SKILLS & PERSISTENT MEMORY */}
+        {activeSection === "Skills & Memory" && (
+          <SkillsAndMemoryView />
+        )}
+
+        {/* TRIGGERS & AUTOMATIONS */}
+        {activeSection === "Automations" && (
+          <AutomationsView />
+        )}
+
+        {/* 3. DISCOVER / WORKFLOW BUILDER (PRESERVED) */}
+        {(activeSection === "My Workflows" || activeSection === "Discover") && (
           <WorkflowBuilderView
             workflow={currentWorkflow}
             onWorkflowSaved={handleWorkflowSaved}
@@ -100,8 +179,8 @@ export function App() {
           />
         )}
 
-        {/* 4. IMAGE 4: PLAN AND APPROVAL (Human Override) */}
-        {activeSection === "Permissions" && (
+        {/* 4. GOVERNANCE / PERMISSIONS / APPROVAL (PRESERVED) */}
+        {(activeSection === "Permissions" || activeSection === "Governance" || activeSection === "Approval & Scope") && (
           <PlanApprovalView
             workflow={currentWorkflow}
             approval={activeApproval}
@@ -112,8 +191,16 @@ export function App() {
           />
         )}
 
-        {/* 5. IMAGE 5: LIVE RUN (UiPath Automation Cloud style) */}
-        {activeSection === "Live Run" && (
+        {/* UNIFIED ACTIVITY CENTER */}
+        {activeSection === "Execution History" && (
+          <UnifiedActivityCenter
+            onInspectRun={(runId) => setActiveSection("Live Run")}
+            onNavigateSection={handleNavigate}
+          />
+        )}
+
+        {/* 5. EXECUTION MONITOR / LIVE RUN (PRESERVED) */}
+        {(activeSection === "Live Run" || activeSection === "Run Monitor") && (
           <LiveRunView
             workflow={currentWorkflow}
             approval={activeApproval}
@@ -122,16 +209,29 @@ export function App() {
           />
         )}
 
-        {/* 6. IMAGE 6: ACTIVITY & IMPROVEMENT */}
-        {activeSection === "Activity" && (
+        {/* 6. ACTIVITY & AUDIT TRAIL (PRESERVED) */}
+        {(activeSection === "Activity" || activeSection === "Activity & Audit") && (
           <AuditTrailViewer />
         )}
 
-        {/* SETTINGS / PLUGINS */}
-        {activeSection === "Settings" && (
+        {/* INTEGRATION HUB */}
+        {activeSection === "Integrations" && (
+          <IntegrationHubView />
+        )}
+
+        {/* PLUGINS & TOOLS (PRESERVED) */}
+        {activeSection === "Plugins & Tools" && (
           <PluginManagerView />
         )}
-        {activeSection === "Test Site Sandbox" && <PaperOrganizerSandboxView />}
+
+        {activeSection === "Artifacts" && (
+          <ArtifactsView
+            onStartRecording={(preset) => { setRecordingPreset(preset); setActiveSection("Teach a Task"); }}
+            onNavigate={handleNavigate}
+          />
+        )}
+
+        {activeSection === "Settings" && <SettingsView />}
 
         {/* ASK AI — GENERAL TASK AGENT */}
         {activeSection === "Ask AI" && (
@@ -142,6 +242,8 @@ export function App() {
             initialPrompt={initialGoal}
             activeWorkflow={currentWorkflow.steps.length ? currentWorkflow : undefined}
             activeApproval={activeApproval}
+            theme={theme}
+            sidebarCommand={askAICommand}
           />
         )}
       </main>
