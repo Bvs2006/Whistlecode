@@ -1032,7 +1032,61 @@ input[type="checkbox"], input[type="radio"] { accent-color: #9bca82; }
   .ask-ai-preview-panel, .ask-ai-preview-panel.is-expanded { inset: 0; width: 100% !important; min-width: 0; border-radius: 10px; }
 }
 .ask-ai-view-container .ask-ai-header-titles h2 { color: var(--wc-text); font-size: clamp(24px, 2.1vw, 32px); font-weight: 620; letter-spacing: -.045em; }
+
+.ask-ai-view-container[data-theme="light"] {
+  --wc-text: #171717;
+  --wc-muted: #666666;
+  --wc-line: #e5e5e5;
+  --wc-line-strong: #c9c9c9;
+  color: #171717;
+  background: #f5f5f5;
+}
+.ask-ai-view-container[data-theme="light"] .ask-ai-chat-pane,
+.ask-ai-view-container[data-theme="light"] .ask-ai-chat-pane > .ask-ai-chat-stream { background: #f5f5f5; }
+.ask-ai-view-container[data-theme="light"] .ask-ai-preview-panel { border-color: #e5e5e5; }
+.ask-ai-view-container[data-theme="light"] .chat-bubble-card.user-bubble,
+.ask-ai-view-container[data-theme="light"] .user-bubble { border-color: #d4d4d4 !important; background: #eaeaea !important; color: #171717 !important; }
+.ask-ai-view-container[data-theme="light"] .ask-ai-form,
+.ask-ai-view-container[data-theme="light"] .ask-ai-input-bar .ask-ai-form { border-color: #dedede !important; background: #fff !important; }
+.ask-ai-view-container[data-theme="light"] .ask-ai-starter-card,
+.ask-ai-view-container[data-theme="light"] .btn-clarification-option { border-color: #dedede; background: #fff; color: #262626; }
+.ask-ai-view-container[data-theme="light"] .ask-ai-starter-card:hover,
+.ask-ai-view-container[data-theme="light"] .btn-clarification-option:hover { border-color: #a3a3a3; background: #f0f0f0; }
+.ask-ai-view-container[data-theme="light"] .ask-ai-preview-tools button,
+.ask-ai-view-container[data-theme="light"] .ask-ai-artifact-subhead button { border-color: #dedede; background: #f5f5f5; color: #262626; }
+.ask-ai-view-container[data-theme="light"] .ask-ai-artifact-tabs button.active { border-color: #d4d4d4; background: #f0f0f0; color: #171717; }
+.ask-ai-view-container[data-theme="light"] .ask-ai-inline-workflow-actions { border-color: #dedede; background: #f5f5f5; color: #404040; }
+.ask-ai-view-container[data-theme="light"] .ask-ai-inline-workflow-actions strong { color: #171717; }
+.ask-ai-view-container[data-theme="light"] .ask-ai-inline-workflow-actions button { border-color: #bdbdbd; background: #eaeaea; color: #171717; }
+.ask-ai-view-container[data-theme="light"] .ask-ai-approved-indicator,
+.ask-ai-view-container[data-theme="light"] .ask-ai-task-progress span { background: #737373; }
+.ask-ai-view-container[data-theme="light"] .ask-ai-preview-resizer:hover,
+.ask-ai-view-container[data-theme="light"] .ask-ai-preview-resizer:focus-visible { background: #d4d4d4; }
+.ask-ai-view-container[data-theme="light"] .btn-suggestion-chip { border-color: #dedede; background: #fff; color: #404040; }
+.ask-ai-view-container[data-theme="light"] .btn-suggestion-chip:hover:not(:disabled) { border-color: #a3a3a3; background: #f0f0f0; color: #171717; }
+.ask-ai-view-container[data-theme="light"] .btn-send-goal { background: #171717 !important; color: #fff !important; box-shadow: 0 2px 8px #0002; }
+.ask-ai-view-container[data-theme="light"] .btn-send-goal:hover:not(:disabled) { background: #404040 !important; }
+.ask-ai-view-container[data-theme="light"] .slash-cmd-hints .hint-pill { border-color: #dedede; background: #fff; color: #404040; }
+.ask-ai-view-container[data-theme="light"] .slash-cmd-hints .hint-pill:hover { border-color: #a3a3a3; background: #f0f0f0; color: #171717; }
+.ask-ai-view-container[data-theme="light"] .provider-model-selector select,
+.ask-ai-view-container[data-theme="light"] .select-provider-mini { border-color: #dedede; background: #fff; color: #262626; }
+.ask-ai-view-container[data-theme="light"] .selector-icon,
+.ask-ai-view-container[data-theme="light"] .ask-ai-attach-button,
+.ask-ai-view-container[data-theme="light"] .ask-ai-attach-icon { color: #525252; }
+.ask-ai-view-container[data-theme="light"] .ask-ai-attach-icon { border-color: #d4d4d4; background: #f5f5f5; }
+.ask-ai-view-container[data-theme="light"] .bottom-quick-pills-row .quick-pill-btn { border-color: #dedede; background: #fff; color: #404040; }
+.ask-ai-view-container[data-theme="light"] .bottom-quick-pills-row .quick-pill-btn:hover { border-color: #a3a3a3; background: #f0f0f0; }
+.ask-ai-view-container[data-theme="light"] .ask-ai-welcome .welcome-badge,
+.ask-ai-view-container[data-theme="light"] .ask-ai-welcome .welcome-icon,
+.ask-ai-view-container[data-theme="light"] .ask-ai-status-dot { color: #404040; background-color: #e5e5e5; }
+.ask-ai-view-container[data-theme="light"] .ask-ai-welcome .welcome-badge { border-color: #d4d4d4; }
+.ask-ai-view-container[data-theme="light"] .ask-ai-welcome .welcome-icon { filter: grayscale(1); }
 .ask-ai-view-container .ask-ai-header-titles p { max-width: 690px; margin-top: 8px; color: var(--wc-muted); font-size: 14px; line-height: 1.65; }
+.ask-ai-view-container[data-theme="light"] .ask-ai-starter-card .starter-arrow,
+.ask-ai-view-container[data-theme="light"] .ask-ai-eyebrow { color: #525252 !important; }
+.ask-ai-view-container[data-theme="light"] .ask-ai-starter-card:hover:not(:disabled) { border-color: #a3a3a3 !important; background: #f0f0f0 !important; }
+.ask-ai-view-container[data-theme="light"] .ask-ai-approved-indicator,
+.ask-ai-view-container[data-theme="light"] .ask-ai-status-dot { background: #737373 !important; }
 .ask-ai-view-container .ask-ai-phase-badge { padding: 8px 12px; border: 1px solid var(--wc-line-strong); border-radius: 999px; background: #121914; color: #c8d0c8; font-size: 11px; }
 .ask-ai-view-container .phase-understanding_request, .ask-ai-view-container .phase-preparing_plan { border-color: #756239; background: #211d13; color: #e4c976; }
 .ask-ai-view-container .phase-asking_question { border-color: #756239; background: #211d13; color: #e4c976; }
