@@ -3,10 +3,10 @@ import { useEffect, useState, type FormEvent } from "react";
 type LandingPageProps = { onLaunch: (prompt?: string) => void };
 
 const capabilities = [
-  { icon: "◎", title: "Record the real task", text: "Show WhistleCode the steps on a website you choose. Your captured actions become an editable draft." },
-  { icon: "⌘", title: "Make it repeatable", text: "Turn the steps you already do into a workflow you can return to and run again." },
-  { icon: "◈", title: "Set a clear scope", text: "Review the websites and action types a workflow is allowed to use before it runs." },
-  { icon: "✓", title: "Keep the final say", text: "Sensitive actions pause for your approval, and each run leaves a visible activity trail." },
+  { icon: "◎", title: "Record the real task", text: "Show WhistleCode the steps on a website you choose. Your captured actions become an editable draft.", steps: ["Capture", "Edit", "Reuse"] },
+  { icon: "⌘", title: "Make it repeatable", text: "Turn the steps you already do into a workflow you can return to and run again.", steps: ["Do it once", "Save steps", "Run again"] },
+  { icon: "◈", title: "Set a clear scope", text: "Review the websites and action types a workflow is allowed to use before it runs.", steps: ["Choose site", "Set actions", "Review"] },
+  { icon: "✓", title: "Keep the final say", text: "Sensitive actions pause for your approval, and each run leaves a visible activity trail.", steps: ["Review plan", "Approve step", "See history"] },
 ];
 const integrations = [
   { icon: "◎", name: "Browser", status: "Available now", detail: "Record tasks on the websites you already use, then review the saved workflow before running it.", state: "available" },
@@ -106,7 +106,7 @@ export function LandingPage({ onLaunch }: LandingPageProps) {
 
         <section className="feature-section" id="product">
           <div className="section-intro"><div className="eyebrow"><span className="eyebrow-dot" /> MADE FOR THE WORK YOU REPEAT</div><h2>A routine you<br />can trust.</h2><p>Start with a task you already know. Keep the plan and every decision in view.</p></div>
-          <div className="capability-grid">{capabilities.map((item, index) => <article className={`capability-card capability-${index + 1}`} key={item.title}><div className="capability-icon">{item.icon}</div><h3>{item.title}</h3><p>{item.text}</p>{index === 0 && <div className="tool-dots"><span>◎</span><span>◉</span><span>▣</span><span>⌘</span><span>✳</span><span>↗</span></div>}{index === 3 && <div className="approval-mini"><span>Review plan</span><span>✓ Approved by you</span><b>3 of 3 steps reviewed</b></div>}</article>)}</div>
+          <div className="capability-grid">{capabilities.map((item, index) => <article className={`capability-card capability-${index + 1}`} key={item.title}><div className="capability-icon" aria-hidden="true">0{index + 1}</div><span className="capability-number">WORKFLOW STEP</span><h3>{item.title}</h3><p>{item.text}</p><div className="capability-steps" aria-label={`${item.title}: ${item.steps.join(", then ")}`}>{item.steps.map((step, stepIndex) => <span className="capability-step" key={step}><i aria-hidden="true">{stepIndex + 1}</i>{step}</span>)}</div></article>)}</div>
         </section>
 
         <section className="landing-integrations-section" id="integrations" aria-labelledby="landing-integrations-title">
