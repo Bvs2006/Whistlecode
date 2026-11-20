@@ -42,16 +42,16 @@ export function Sidebar({ activeSection, theme, onNavigate, onAskAIAction, onTog
       label: "WORKSPACE",
       items: [
         { section: "Workspace", label: "Workspace", icon: "⊞" },
-        { section: "Ask AI", label: "Ask AI", icon: "💬" },
+        { section: "Ask AI", label: "Ask AI", icon: "◌" },
         { section: "Teach", label: "Record task", icon: "◉" },
-        { section: "Templates", label: "Templates", icon: "✨" },
+        { section: "Templates", label: "Templates", icon: "✧" },
       ],
     },
     {
       label: "AUTOMATION",
       items: [
-        { section: "Automations", label: "Automations", icon: "⚡" },
-        { section: "My Workflows", label: "Workflow Editor", icon: "🛠️" },
+        { section: "Automations", label: "Automations", icon: "ϟ" },
+        { section: "My Workflows", label: "Workflow Editor", icon: "⌘" },
         { section: "Execution History", label: "Activity", icon: "▥" },
       ],
     },
