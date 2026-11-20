@@ -4,6 +4,7 @@ import App from "./App";
 import "./styles.css";
 import "./workspace.css";
 import "./ui-polish.css";
+import "./v0-reference.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

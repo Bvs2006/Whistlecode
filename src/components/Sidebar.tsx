@@ -36,14 +36,14 @@ export function Sidebar({ activeSection, onNavigate, onAskAIAction }: SidebarPro
   });
 
   const mainNavItems: { section: AppSection; label: string; icon: string; hasBadge?: boolean }[] = [
-    { section: "Ask AI", label: "Ask AI", icon: "💬" },
-    { section: "Agents", label: "My Agents", icon: "🤖" },
-    { section: "Templates", label: "Discover", icon: "🧭" },
-    { section: "Teach", label: "Recording Studio", icon: "🎙️", hasBadge: true },
-    { section: "My Workflows", label: "Workflows", icon: "🔀" },
-    { section: "Artifacts", label: "Community", icon: "👥" },
-    { section: "Integrations", label: "Integrations", icon: "🧩" },
-    { section: "Execution History", label: "Activity", icon: "📈" },
+    { section: "Ask AI", label: "Ask AI", icon: "◌" },
+    { section: "Agents", label: "My Agents", icon: "◇" },
+    { section: "Templates", label: "Discover", icon: "✧" },
+    { section: "Teach", label: "Recording Studio", icon: "◉", hasBadge: true },
+    { section: "My Workflows", label: "Workflows", icon: "⌘" },
+    { section: "Artifacts", label: "Community", icon: "◎" },
+    { section: "Integrations", label: "Integrations", icon: "⌘" },
+    { section: "Execution History", label: "Activity", icon: "▥" },
   ];
 
   const workspaceNavItems: { section: AppSection; label: string; icon: string }[] = [
