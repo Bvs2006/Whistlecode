@@ -1658,3 +1658,137 @@ input:focus, textarea:focus, select:focus {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
 }
+
+/* Final product-wide color alignment; kept last to win over legacy page skins. */
+.app-shell {
+  --ui-surface: #111a23;
+  --ui-surface-raised: #17232d;
+  --ui-surface-soft: #0e171e;
+  --ui-border: #2a3a46;
+  --ui-border-hover: #527b7e;
+  --ui-ink: #edf4f4;
+  --ui-muted: #a6b7bc;
+  --ui-subtle: #81969d;
+  --ui-mint: #83dec6;
+  --ui-green: #83dec6;
+  --ui-gold: #dfbd72;
+  --wc-page: #0c1118;
+  --wc-panel: #111a23;
+  --wc-panel-raised: #17232d;
+  --wc-panel-soft: #1b2933;
+  --wc-line: #2a3a46;
+  --wc-line-strong: #3b5260;
+  --wc-text: #edf4f4;
+  --wc-muted: #a6b7bc;
+  --wc-subtle: #81969d;
+  --wc-green: #83dec6;
+  background: #0c1118;
+}
+.app-shell .main-viewport { background: radial-gradient(ellipse 72% 40% at 82% 0%, #2c73751b, transparent 78%), #0c1118; }
+.app-shell .sidebar-img1 { border-right-color: #263843; background: linear-gradient(180deg, #111a23, #0c1219); }
+.app-shell .sidebar-nav-item-img1.active { border-color: #32645f; background: linear-gradient(100deg, #173b3b, #142c31); color: #9ae8d2; box-shadow: inset 3px 0 #7edcc4, 0 6px 18px #0002; }
+.app-shell .sidebar-nav-item-img1.active .nav-icon-img1 { background: #204b49; color: #9ae8d2; }
+.app-shell .sidebar-new-chat { border-color: #3c6864; background: linear-gradient(135deg, #173c3b, #152c31); color: #b4efe0; }
+.app-shell .sidebar-new-chat:hover { border-color: #75c9b5; background: #204a47; }
+.app-shell .global-top-ribbon { background: #101820ed; }
+.app-shell .ribbon-left strong { color: #dcebea; }
+.app-shell .stage-pill-mini.active { border: 1px solid #376960; background: #183533; color: #a6ead9; box-shadow: none; }
+.app-shell :focus-visible { outline: 2px solid #83dec6; outline-offset: 3px; }
+
+.app-shell .ask-ai-view-container:not([data-theme="light"]) .ask-ai-welcome {
+  border-color: #2e4d50;
+  background: radial-gradient(ellipse at 0 0, #3ca69a18, transparent 55%), linear-gradient(145deg, #14212a, #101920 76%);
+}
+.app-shell .ask-ai-view-container:not([data-theme="light"]) .ask-ai-welcome-mark { border-color: #39736b; background: #173b39; color: #a3e7d4; }
+.app-shell .ask-ai-view-container:not([data-theme="light"]) .ask-ai-eyebrow { color: #90ddcb; }
+.app-shell .ask-ai-view-container:not([data-theme="light"]) .ask-ai-starter-card { border-color: #2e454c; background: #121d25; color: #dce8e7; }
+.app-shell .ask-ai-view-container:not([data-theme="light"]) .ask-ai-starter-card:hover:not(:disabled) { border-color: #68b9aa; background: #172a30; }
+.app-shell .ask-ai-view-container:not([data-theme="light"]) .ask-ai-welcome-note { color: #9bb2b4; }
+.app-shell .ask-ai-view-container:not([data-theme="light"]) .ask-ai-welcome-note > span { background: #83dec6; box-shadow: 0 0 10px #83dec655; }
+.app-shell .ask-ai-view-container:not([data-theme="light"]) .chat-bubble-card.ai-bubble { border-color: #2b4149; background: linear-gradient(145deg, #141f27, #111a21); }
+.app-shell .ask-ai-view-container:not([data-theme="light"]) .chat-bubble-card.user-bubble { border-color: #35665f; background: linear-gradient(135deg, #193a38, #172c31); }
+.app-shell .ask-ai-view-container:not([data-theme="light"]) .ask-ai-form { border-color: #38515a; background: linear-gradient(145deg, #141f27, #111a21); }
+.app-shell .ask-ai-view-container:not([data-theme="light"]) .ask-ai-form:focus-within { border-color: #68b9aa; box-shadow: 0 0 0 3px #68b9aa20, 0 14px 38px #0004; }
+.app-shell .ask-ai-view-container .btn-send-goal { border-color: #9ce5d1; background: linear-gradient(135deg, #9ce5d1, #65c8b4); color: #102320; }
+.app-shell .ask-ai-view-container .ask-ai-preview-panel { border-color: #2e454c; background: #111a21; }
+.app-shell .ask-ai-view-container .ask-ai-artifact-tabs button.active { border-color: #3b7069; background: #183330; color: #9ce5d1; }
+.app-shell .feature-primary-action,
+.app-shell .btn-primary,
+.app-shell .btn-approve-bold,
+.app-shell .btn-synthesize-workflow,
+.app-shell .btn-send-goal,
+.app-shell .btn-plan-approve { border-color: #6bc8b5; background: linear-gradient(135deg, #279688, #1f796f); color: #fff; box-shadow: 0 7px 20px #1c756d26; }
+.app-shell .feature-primary-action:hover,
+.app-shell .btn-primary:hover,
+.app-shell .btn-approve-bold:hover,
+.app-shell .btn-synthesize-workflow:hover,
+.app-shell .btn-plan-approve:hover { filter: brightness(1.12); }
+.app-shell .feature-page-icon { border-color: #3d716b; background: #183a38; color: #9fe5d3; }
+.app-shell .feature-eyebrow { color: #80cdbd; }
+.app-shell .feature-page-header,
+.app-shell .settings-header { border-color: #2a3a46; }
+
+.app-shell[data-theme="light"] {
+  --ui-surface: #ffffff;
+  --ui-surface-raised: #f8fbfa;
+  --ui-surface-soft: #edf4f2;
+  --ui-border: #d7e3e0;
+  --ui-border-hover: #8bb9ae;
+  --ui-ink: #203337;
+  --ui-muted: #5f7478;
+  --ui-subtle: #73888b;
+  --ui-mint: #167f70;
+  --ui-green: #167f70;
+  --ui-gold: #987330;
+  --wc-page: #f2f6f5;
+  --wc-panel: #ffffff;
+  --wc-panel-raised: #f8fbfa;
+  --wc-panel-soft: #eaf2f0;
+  --wc-line: #d7e3e0;
+  --wc-line-strong: #bfd2cd;
+  --wc-text: #203337;
+  --wc-muted: #5f7478;
+  --wc-subtle: #73888b;
+  --wc-green: #167f70;
+  background: #f2f6f5;
+}
+.app-shell[data-theme="light"] .main-viewport { background: radial-gradient(ellipse 72% 40% at 82% 0%, #a3d9d340, transparent 78%), #f2f6f5; }
+.app-shell[data-theme="light"] .sidebar-img1 { border-color: #d8e3e0; background: linear-gradient(180deg, #fbfdfc, #f1f6f4); }
+.app-shell[data-theme="light"] .sidebar-nav-item-img1.active { border-color: #b9ddd3; background: #e2f3ee; color: #176d63; box-shadow: inset 3px 0 #2e998d; }
+.app-shell[data-theme="light"] .sidebar-nav-item-img1.active .nav-icon-img1 { background: #cde9e1; color: #176d63; }
+.app-shell[data-theme="light"] .sidebar-new-chat { border-color: #b7d9d1; background: #e4f3ef; color: #185f56; }
+.app-shell[data-theme="light"] .global-top-ribbon { border-color: #d7e3e0; background: #f7faf9ed; }
+.app-shell[data-theme="light"] .ask-ai-view-container:not([data-theme="light"]) .ask-ai-welcome { background: #fff; }
+.app-shell[data-theme="light"] .ask-ai-view-container .ask-ai-welcome { border-color: #d3e2df; background: radial-gradient(ellipse at 0 0, #8fd0c51c, transparent 55%), linear-gradient(145deg, #fff, #f4f9f7 76%); }
+.app-shell[data-theme="light"] .ask-ai-view-container .ask-ai-starter-card { border-color: #d6e3e0; background: #fff; color: #34484a; }
+.app-shell[data-theme="light"] .ask-ai-view-container .ask-ai-form { border-color: #c7d9d5; background: #fff; }
+.app-shell[data-theme="light"] .ask-ai-view-container .chat-bubble-card.ai-bubble { border-color: #d8e4e1; background: #fff; }
+.app-shell[data-theme="light"] .ask-ai-view-container .chat-bubble-card.user-bubble { border-color: #bddbd3; background: #eaf6f2; color: #284440; }
+.app-shell[data-theme="light"] .feature-page-icon { border-color: #bddbd3; background: #e5f5f0; color: #176d63; }
+
+.landing-page .landing-nav .nav-cta,
+.landing-page .primary-cta { border-color: #91e4cf; background: linear-gradient(135deg, #a1ead7, #6bcbb8); color: #102522; }
+.landing-page .landing-nav .nav-cta:hover,
+.landing-page .primary-cta:hover { background: #b5f2e1; }
+.landing-page .eyebrow-dot { background: #83dec6; box-shadow: 0 0 12px #83dec677; }
+.landing-page .landing-prompt-card { border-color: #3b5860; background: linear-gradient(145deg, #172733, #101c25 76%); }
+.landing-page .landing-prompt-form:focus-within { border-color: #78cbbb; box-shadow: 0 0 0 3px #78cbbb24; }
+.landing-page .landing-prompt-form-foot button { background: linear-gradient(135deg, #a1ead7, #6bcbb8); color: #102522; }
+
+@media (max-width: 760px) {
+  .app-shell .sidebar-img1 { width: 68px; flex: 0 0 68px; align-items: center; padding: 14px 7px; }
+  .app-shell .sidebar-brand-row { justify-content: center; width: 100%; margin-bottom: 14px; }
+  .app-shell .sidebar-brand-lockup span,
+  .app-shell .sidebar-collapse-button,
+  .app-shell .sidebar-nav-group-label,
+  .app-shell .sidebar-nav-item-img1 .nav-label-img1,
+  .app-shell .sidebar-new-chat .nav-label-img1,
+  .app-shell .sidebar-footer-user-img1 .user-info-img1 { display: none; }
+  .app-shell .sidebar-brand-lockup img { width: 28px; height: 24px; }
+  .app-shell .sidebar-new-chat { justify-content: center; width: 46px; min-height: 44px; padding: 0; }
+  .app-shell .sidebar-nav-list-img1 { width: 100%; }
+  .app-shell .sidebar-nav-item-img1 { justify-content: center; width: 100%; padding: 0; }
+  .app-shell .sidebar-footer-user-img1 { justify-content: center; width: 100%; }
+  .app-shell .sidebar-theme-toggle { justify-content: center; padding: 8px 0; }
+  .app-shell .sidebar-theme-toggle .nav-label-img1 { display: none; }
+}

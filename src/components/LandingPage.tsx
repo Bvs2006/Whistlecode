@@ -93,7 +93,7 @@ export function LandingPage({ onLaunch }: LandingPageProps) {
               <div className="landing-prompt-greeting"><span>WORKSPACE · READY WHEN YOU ARE</span><h2>What can I help you with?</h2><p>Describe a task, ask a question, or start a workflow draft. You’ll review every action before it runs.</p></div>
               <form className="landing-prompt-form" onSubmit={submitPrompt}>
                 <label className="landing-prompt-sr-only" htmlFor="landing-prompt">Message WhistleCode</label>
-                <textarea id="landing-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Ask anything or describe a task to automate…" rows={3} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
+                <textarea id="landing-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Ask anything or describe a task to automate…" rows={3} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
                 <div className="landing-prompt-form-foot"><span>↵ to send · ⇧↵ for a new line</span><button type="submit" aria-label="Start with this prompt">↑</button></div>
               </form>
               <div className="landing-prompt-suggestions"><span>TRY ASKING</span><button type="button" onClick={() => setPrompt("Help me plan a task I repeat in my browser")}>Plan a browser task <b>↗</b></button><button type="button" onClick={() => setPrompt("Explain how approvals work before a workflow runs")}>Understand approvals <b>↗</b></button></div>
