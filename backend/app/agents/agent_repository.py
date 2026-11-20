@@ -143,6 +143,45 @@ class AgentRepository:
         return cls.save_agent(agent)
 
     @classmethod
+    def duplicate_agent(cls, agent_id: str) -> Optional[AgentDefinition]:
+        """Duplicates an existing agent into a new draft agent."""
+        import uuid
+        source = cls.get_agent(agent_id)
+        if not source:
+            return None
+        new_id = f"ag_{uuid.uuid4().hex[:12]}"
+        now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        duplicate = AgentDefinition(
+            id=new_id,
+            name=f"{source.name} (Copy)",
+            description=source.description,
+            instructions=source.instructions,
+            model=source.model,
+            assigned_skills=list(source.assigned_skills),
+            connected_integrations=list(source.connected_integrations),
+            memory_config=source.memory_config.model_copy(),
+            trigger_config=source.trigger_config.model_copy(),
+            permission_scope=list(source.permission_scope),
+            execution_policy=source.execution_policy.model_copy(),
+            workflow_plan=source.workflow_plan.model_copy() if source.workflow_plan else None,
+            status=AgentStatus.DRAFT,
+            created_at=now_str,
+            updated_at=now_str,
+        )
+        return cls.save_agent(duplicate)
+
+    @classmethod
+    def delete_agent(cls, agent_id: str) -> bool:
+        """Permanently deletes an agent from the database."""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM agents WHERE id = ?", (agent_id,))
+        affected = cursor.rowcount
+        conn.commit()
+        conn.close()
+        return affected > 0
+
+    @classmethod
     def seed_default_agents_if_empty(cls):
         """Seeds initial template agents if the database is fresh."""
         existing = cls.list_agents()

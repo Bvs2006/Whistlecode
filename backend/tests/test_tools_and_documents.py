@@ -49,11 +49,12 @@ def test_filesystem_rejects_paths_outside_the_sandbox():
         write_text("../outside.txt", "no")
 
 
-def test_document_tools_require_permission_and_write_real_files():
+@pytest.mark.asyncio
+async def test_document_tools_require_permission_and_write_real_files():
     with pytest.raises(ToolPermissionError):
-        execute_tool("doc.generate_docx", {"topic": "Lab notes"}, [])
+        await execute_tool("doc.generate_docx", {"topic": "Lab notes"}, [])
 
-    created = execute_tool(
+    created = await execute_tool(
         "doc.generate_pptx",
         {"topic": "Weekly briefing", "bullets": ["Revenue held steady", "Two invoices need review"], "slide_count": 2},
         ["write_file"],
@@ -70,7 +71,7 @@ def test_document_tools_require_permission_and_write_real_files():
     pdf = generate_document("pdf", {"topic": "Study notes", "bullets": ["Definition: scope"]})
     assert Path(get_artifact(pdf["id"])["path"]).read_bytes().startswith(b"%PDF")
 
-    workbook = execute_tool(
+    workbook = await execute_tool(
         "doc.analyze_xlsx",
         {"topic": "Spend", "rows": [["Item", "Amount"], ["Paper", "12"], ["Ink", "4"]]},
         ["write_file"],

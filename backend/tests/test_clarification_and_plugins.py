@@ -6,6 +6,23 @@ from backend.app.plugins.plugin_manager import plugin_manager_instance, PluginMa
 from backend.app.recording.desktop_observer import desktop_observer_instance
 
 
+def test_workflow_search_does_not_match_wrong_named_destination():
+    workflows = [{
+        "id": "wf_wikipedia",
+        "title": "searching in wikipidia",
+        "intent": "Search Wikipedia for a topic",
+        "parameters": [],
+        "steps": [{"name": "Navigate to Wikipedia", "notes": ""}],
+    }]
+
+    results = WorkflowSynthesizer.search_workflows_nl(
+        "I want to open Google Maps and search for the Taj Mahal location",
+        workflows,
+    )
+
+    assert results == []
+
+
 def test_clarification_dialogue_identifies_restaurant_ambiguity():
     """SUGILITE concept: Ambiguous GUI choice triggers clarifying question."""
     synthesizer = WorkflowSynthesizer()

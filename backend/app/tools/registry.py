@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from typing import Any, Callable
+import inspect
 
 from pydantic import BaseModel, Field
 
 from app.documents.service import DocumentGenerationError, analyze_rows, generate_document
-from app.tools.filesystem import FilesystemScopeError, list_directory, read_text, write_text
+from app.tools.filesystem import FilesystemScopeError, list_directory, read_text, write_text, sandbox_root
 
 
 class ToolSpec(BaseModel):
@@ -111,14 +112,38 @@ def _specs() -> list[ToolSpec]:
         ToolSpec(
             id="browser.navigate",
             name="Open website",
-            description="Registered browser capability. Direct invocation stays disabled in the tool API; recorded workflows use the existing Playwright executor.",
+            description="Opens a website in a controlled Chromium session and returns page metadata.",
             category="browser",
             input_schema={"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]},
-            output_schema={"type": "object"},
+            output_schema={"type": "object", "properties": {"url": {"type": "string"}, "title": {"type": "string"}}},
             required_permissions=["browser_control"],
             integration_id="integ_browser",
             risk="high",
-            enabled=False,
+            enabled=True,
+        ),
+        ToolSpec(
+            id="browser.extract",
+            name="Extract page text",
+            description="Reads visible text from a website after navigating to it.",
+            category="browser",
+            input_schema={"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]},
+            output_schema={"type": "object", "properties": {"title": {"type": "string"}, "text": {"type": "string"}}},
+            required_permissions=["browser_control", "network_access"],
+            integration_id="integ_browser",
+            risk="medium",
+            enabled=True,
+        ),
+        ToolSpec(
+            id="browser.screenshot",
+            name="Capture browser screenshot",
+            description="Captures a screenshot of a website in a temporary Chromium session.",
+            category="browser",
+            input_schema={"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]},
+            output_schema={"type": "object", "properties": {"download_path": {"type": "string"}}},
+            required_permissions=["browser_control", "network_access"],
+            integration_id="integ_browser",
+            risk="medium",
+            enabled=True,
         ),
         ToolSpec(
             id="mcp.call_tool",
@@ -145,6 +170,9 @@ _EXECUTORS: dict[str, Callable[[dict[str, Any]], Any]] = {
     "doc.generate_pptx": lambda args: generate_document("pptx", args),
     "doc.generate_pdf": lambda args: generate_document("pdf", args),
     "doc.analyze_xlsx": lambda args: _analyze_and_write(args),
+    "browser.navigate": lambda args: _browser_page(args),
+    "browser.extract": lambda args: _browser_page(args),
+    "browser.screenshot": lambda args: _browser_screenshot(args),
 }
 
 
@@ -156,7 +184,7 @@ def get_tool(tool_id: str) -> ToolSpec | None:
     return TOOLS.get(tool_id)
 
 
-def execute_tool(tool_id: str, arguments: dict[str, Any] | None, granted_permissions: list[str] | None) -> dict[str, Any]:
+async def execute_tool(tool_id: str, arguments: dict[str, Any] | None, granted_permissions: list[str] | None) -> dict[str, Any]:
     spec = TOOLS.get(tool_id)
     if spec is None:
         raise KeyError(tool_id)
@@ -172,9 +200,58 @@ def execute_tool(tool_id: str, arguments: dict[str, Any] | None, granted_permiss
         }
     try:
         result = _EXECUTORS[tool_id](arguments or {})
+        if inspect.isawaitable(result):
+            result = await result
     except (FilesystemScopeError, DocumentGenerationError) as exc:
         return {"status": "error", "tool_id": tool_id, "message": str(exc)}
     return {"status": "success", "tool_id": tool_id, "result": result}
+
+
+def _browser_url(arguments: dict[str, Any]) -> str:
+    url = str(arguments.get("url") or "").strip()
+    if not (url.startswith("http://") or url.startswith("https://")):
+        raise DocumentGenerationError("Enter a complete browser URL beginning with http:// or https://.")
+    return url
+
+
+async def _browser_page(arguments: dict[str, Any]) -> dict[str, Any]:
+    url = _browser_url(arguments)
+    try:
+        from playwright.async_api import async_playwright
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.launch(headless=True)
+            try:
+                page = await browser.new_page(viewport={"width": 1280, "height": 800})
+                await page.goto(url, timeout=20_000, wait_until="domcontentloaded")
+                title = await page.title()
+                text = await page.evaluate("() => document.body ? document.body.innerText.slice(0, 12000) : ''")
+                return {"url": page.url, "title": title, "text": text}
+            finally:
+                await browser.close()
+    except Exception as exc:
+        raise DocumentGenerationError(f"Browser action could not be completed: {exc}") from exc
+
+
+async def _browser_screenshot(arguments: dict[str, Any]) -> dict[str, Any]:
+    data = await _browser_page(arguments)
+    url = str(data["url"])
+    try:
+        from playwright.async_api import async_playwright
+        import uuid
+        root = sandbox_root()
+        filename = f"browser-{uuid.uuid4().hex[:10]}.png"
+        target = root / filename
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.launch(headless=True)
+            try:
+                page = await browser.new_page(viewport={"width": 1280, "height": 800})
+                await page.goto(url, timeout=20_000, wait_until="domcontentloaded")
+                await page.screenshot(path=str(target), full_page=True)
+            finally:
+                await browser.close()
+        return {"download_path": f"/api/artifacts/{filename}", "filename": filename, "url": url, "title": data["title"]}
+    except Exception as exc:
+        raise DocumentGenerationError(f"Screenshot could not be captured: {exc}") from exc
 
 
 def _analyze_and_write(arguments: dict[str, Any]) -> dict[str, Any]:

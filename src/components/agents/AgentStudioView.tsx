@@ -39,6 +39,25 @@ export const AgentStudioView: React.FC<Props> = ({ onRunAgent, onNavigateToAskAI
     }
   };
 
+  const handleDuplicate = async (agent: AgentDefinition) => {
+    try {
+      const copy = await agentService.duplicateAgent(agent.id);
+      setAgents((prev) => [copy, ...prev]);
+    } catch (e: any) {
+      alert("Duplicate failed: " + e.message);
+    }
+  };
+
+  const handleDeletePermanent = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to permanently delete agent '${name}'? This cannot be undone.`)) return;
+    try {
+      await agentService.deleteAgent(id);
+      setAgents((prev) => prev.filter((a) => a.id !== id));
+    } catch (e: any) {
+      alert("Delete failed: " + e.message);
+    }
+  };
+
   const handleArchive = async (id: string, name: string) => {
     if (!window.confirm(`Are you sure you want to archive agent '${name}'?`)) return;
     try {
@@ -170,6 +189,10 @@ export const AgentStudioView: React.FC<Props> = ({ onRunAgent, onNavigateToAskAI
                     ))}
                   </div>
                 </div>
+                <div className="meta-row">
+                  <span className="meta-label">Created:</span>
+                  <span className="meta-date">{new Date(agent.created_at || Date.now()).toLocaleDateString()}</span>
+                </div>
               </div>
 
               <div className="agent-card-actions">
@@ -199,9 +222,19 @@ export const AgentStudioView: React.FC<Props> = ({ onRunAgent, onNavigateToAskAI
 
                 <button
                   type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={() => handleDuplicate(agent)}
+                  title="Duplicate this agent configuration"
+                >
+                  📄 Duplicate
+                </button>
+
+                <button
+                  type="button"
                   className="btn btn-icon-only"
-                  onClick={() => handleArchive(agent.id, agent.name)}
-                  title="Archive agent"
+                  onClick={() => handleDeletePermanent(agent.id, agent.name)}
+                  title="Delete agent permanently"
+                  aria-label="Delete agent"
                 >
                   🗑️
                 </button>

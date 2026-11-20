@@ -29,6 +29,25 @@ class RiskLevel(str, Enum):
     CRITICAL = "critical"
 
 
+class SurfaceType(str, Enum):
+    BROWSER = "browser"
+    DESKTOP = "desktop"
+    FILE = "file"
+
+
+class TargetCandidate(BaseModel):
+    strategy: str  # "test_id", "role_name", "label", "text", "css", "xpath", "coordinate"
+    value: Union[str, Dict[str, Any]]
+    confidence: float = 1.0
+    matched: Optional[bool] = None
+
+
+class AllowedScope(BaseModel):
+    domains: List[str] = Field(default_factory=list)
+    apps: List[str] = Field(default_factory=list)
+    folders: List[str] = Field(default_factory=list)
+
+
 class TargetContext(BaseModel):
     within: Optional[str] = None
     landmark: Optional[str] = None
@@ -45,6 +64,25 @@ class TargetDescriptor(BaseModel):
     bounding_box: Optional[Dict[str, float]] = None
     active_window: Optional[str] = None
     min_confidence: float = 0.85
+    candidates: List[TargetCandidate] = Field(default_factory=list)
+
+    def get_ranked_candidates(self) -> List[TargetCandidate]:
+        if self.candidates:
+            return sorted(self.candidates, key=lambda c: c.confidence, reverse=True)
+        ranked: List[TargetCandidate] = []
+        if self.test_id:
+            ranked.append(TargetCandidate(strategy="test_id", value=self.test_id, confidence=0.95))
+        if self.role and self.name:
+            ranked.append(TargetCandidate(strategy="role_name", value={"role": self.role, "name": self.name}, confidence=0.90))
+        elif self.role and self.text:
+            ranked.append(TargetCandidate(strategy="role_name", value={"role": self.role, "name": self.text}, confidence=0.88))
+        if self.label:
+            ranked.append(TargetCandidate(strategy="label", value=self.label, confidence=0.85))
+        if self.text:
+            ranked.append(TargetCandidate(strategy="text", value=self.text, confidence=0.80))
+        if self.css_fallback:
+            ranked.append(TargetCandidate(strategy="css", value=self.css_fallback, confidence=0.70))
+        return ranked
 
 
 class Precondition(BaseModel):
@@ -75,11 +113,14 @@ class Step(BaseModel):
     id: str
     name: str
     action: ActionType
+    surface: SurfaceType = SurfaceType.BROWSER
     target: Optional[TargetDescriptor] = None
+    target_candidates: List[TargetCandidate] = Field(default_factory=list)
     args: Dict[str, Any] = Field(default_factory=dict)
     risk: RiskLevel = RiskLevel.LOW
     requires_confirmation: bool = False
     idempotent: bool = True
+    timeout_seconds: Optional[float] = None
     preconditions: List[Precondition] = Field(default_factory=list)
     postconditions: List[Postcondition] = Field(default_factory=list)
     enabled: bool = True
@@ -92,6 +133,13 @@ class Step(BaseModel):
     tool_name: Optional[str] = None
     screenshot: Optional[str] = None
     active_window: Optional[str] = None
+
+    def get_target_candidates(self) -> List[TargetCandidate]:
+        if self.target_candidates:
+            return sorted(self.target_candidates, key=lambda c: c.confidence, reverse=True)
+        if self.target:
+            return self.target.get_ranked_candidates()
+        return []
 
 
 class ClarificationQuestion(BaseModel):
@@ -109,11 +157,22 @@ class WorkflowDraft(BaseModel):
     workflow_id: str
     title: str
     intent: str
-    allowed_origins: List[str]
+    allowed_origins: List[str] = Field(default_factory=list)
+    allowed_scope: Optional[AllowedScope] = None
     parameters: List[ParameterDefinition] = Field(default_factory=list)
     steps: List[Step] = Field(default_factory=list)
     final_postconditions: List[Postcondition] = Field(default_factory=list)
     clarifications: List[ClarificationQuestion] = Field(default_factory=list)
+
+    def get_effective_scope(self) -> AllowedScope:
+        if self.allowed_scope:
+            domains = list(dict.fromkeys(self.allowed_scope.domains + (self.allowed_origins or [])))
+            return AllowedScope(
+                domains=domains,
+                apps=self.allowed_scope.apps,
+                folders=self.allowed_scope.folders
+            )
+        return AllowedScope(domains=self.allowed_origins or [])
 
 
 class WorkflowDefinition(WorkflowDraft):
@@ -160,3 +219,4 @@ class PlanPreviewResponse(BaseModel):
     overall_risk: RiskLevel
     is_approved: bool
     allowed_origins: List[str]
+    allowed_scope: Optional[AllowedScope] = None

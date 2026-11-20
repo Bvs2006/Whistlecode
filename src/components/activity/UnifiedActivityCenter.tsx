@@ -68,9 +68,9 @@ export const UnifiedActivityCenter: React.FC<Props> = ({
   const runs = data?.recent_runs || [];
 
   const filteredRuns = runs.filter((r) => {
-    if (activeFilter === "RUNNING") return r.state === "RUNNING";
-    if (activeFilter === "COMPLETED") return r.state === "COMPLETED";
-    if (activeFilter === "FAILED") return r.state === "FAILED" || r.state === "STOPPED";
+    if (activeFilter === "RUNNING") return ["RUNNING", "EXECUTING_STEP", "PRECHECK", "PENDING_CONFIRMATION"].includes(r.state);
+    if (activeFilter === "COMPLETED") return ["COMPLETED", "SUCCESS"].includes(r.state);
+    if (activeFilter === "FAILED") return ["FAILED", "STOPPED", "UNCERTAIN"].includes(r.state);
     if (activeFilter === "APPROVAL") return r.state === "CONFIRMATION_REQUIRED";
     return true;
   }).filter((r) => {

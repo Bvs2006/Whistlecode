@@ -33,16 +33,22 @@ export async function fetchJson(endpoint: string, options: RequestInit = {}) {
 
 export const api = {
   streamConversation: async (
-    payload: { message: string; history: Array<{ role: "user" | "assistant"; content: string }>; active_workflow?: any; attachments?: Array<{ name: string; content: string }> },
+    payload: { message: string; history: Array<{ role: "user" | "assistant"; content: string }>; active_workflow?: any; attachments?: Array<{ name: string; content: string }>; provider?: string },
     signal: AbortSignal,
     onDelta: (text: string) => void,
   ) => {
-    const res = await fetch(`${API_BASE}/api/ai/conversation/stream`, {
-      method: "POST",
-      signal,
-      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-      body: JSON.stringify(payload),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${API_BASE}/api/ai/conversation/stream`, {
+        method: "POST",
+        signal,
+        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+        body: JSON.stringify(payload),
+      });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") throw error;
+      throw new Error("WhistleCode could not connect. Please try again.");
+    }
     if (!res.ok || !res.body) {
       const err = await res.json().catch(() => ({ detail: "WhistleCode could not answer right now." }));
       throw new Error(typeof err.detail === "string" ? err.detail : "WhistleCode could not answer right now.");
@@ -86,17 +92,17 @@ export const api = {
   // Clarification Dialogue & Synthesis
   getClarifications: (recording_id: string) =>
     fetchJson(`/api/recordings/${recording_id}/clarifications`),
-  proposeGoal: (goal: string, signal?: AbortSignal) =>
+  proposeGoal: (goal: string, signal?: AbortSignal, provider?: string) =>
     fetchJson("/api/ai/goal", {
       method: "POST",
       signal,
-      body: JSON.stringify({ goal }),
+      body: JSON.stringify({ goal, provider }),
     }),
-  reviseWorkflow: (workflow: any, instruction: string, signal?: AbortSignal) =>
+  reviseWorkflow: (workflow: any, instruction: string, signal?: AbortSignal, provider?: string) =>
     fetchJson("/api/ai/revise-workflow", {
       method: "POST",
       signal,
-      body: JSON.stringify({ workflow, instruction }),
+      body: JSON.stringify({ workflow, instruction, provider }),
     }),
   proposeObservations: (goal: string, observations: Array<Record<string, unknown>>) =>
     fetchJson("/api/ai/observations", {

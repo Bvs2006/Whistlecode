@@ -36,6 +36,17 @@ class AgUiEventType(str, Enum):
     # Human-in-the-Loop Interruption
     INTERRUPT = "INTERRUPT"
 
+    # Step 5 Typed Chat Events
+    STATUS = "status"
+    CAPABILITY_RESULT = "capability_result"
+    PLAN = "plan"
+    INPUT_REQUEST = "input_request"
+    APPROVAL_REQUEST = "approval_request"
+    STEP_UPDATE = "step_update"
+    VERIFICATION = "verification"
+    RESULT = "result"
+    ERROR = "error"
+
 
 class TaskStatus(str, Enum):
     PENDING = "pending"
@@ -223,3 +234,96 @@ class InterruptEvent(AgUiBaseEvent):
     risk: str
     message: str
     evaluated_args: Dict[str, Any] = Field(default_factory=dict)
+
+
+# ==============================================================================
+# Step 5 Typed Chat Experience Event Models
+# ==============================================================================
+
+class AgUiStatusEvent(AgUiBaseEvent):
+    type: AgUiEventType = AgUiEventType.STATUS
+    phase: str  # "understanding_request", "routing", "synthesizing", "ready", "executing", "verifying", "idle"
+    message: Optional[str] = None
+
+
+class AgUiCapabilityResultEvent(AgUiBaseEvent):
+    type: AgUiEventType = AgUiEventType.CAPABILITY_RESULT
+    outcome: str  # "EXISTING_WORKFLOW", "COMPOSABLE_PLAN", "NEEDS_RECORDING", "CLARIFY_SURFACE", "MISSING_INTEGRATION", "UNSUPPORTED"
+    severity: str  # "green", "amber", "red"
+    reason: str
+    surface: Optional[str] = "browser"
+    surface_confidence: Optional[float] = None
+    target_hints: Optional[Dict[str, Any]] = None
+    matched_workflow_id: Optional[str] = None
+    missing_integration_id: Optional[str] = None
+
+
+class AgUiPlanEvent(AgUiBaseEvent):
+    type: AgUiEventType = AgUiEventType.PLAN
+    workflow_id: str
+    title: str
+    summary: str
+    steps: List[Dict[str, Any]] = Field(default_factory=list)
+    allowed_origins: List[str] = Field(default_factory=list)
+    risk: str = "low"
+    sensitive_step_ids: List[str] = Field(default_factory=list)
+    content_hash: Optional[str] = None
+    version: int = 1
+
+
+class AgUiInputRequestEvent(AgUiBaseEvent):
+    type: AgUiEventType = AgUiEventType.INPUT_REQUEST
+    request_id: str
+    kind: str = "clarification"  # "clarification", "surface_choice", "missing_parameter"
+    question: str
+    explanation: Optional[str] = None
+    options: List[str] = Field(default_factory=list)
+    surface_options: Optional[List[Dict[str, Any]]] = None
+    parameters: Optional[List[Dict[str, Any]]] = None
+
+
+class AgUiApprovalRequestEvent(AgUiBaseEvent):
+    type: AgUiEventType = AgUiEventType.APPROVAL_REQUEST
+    approval_id: str
+    workflow_id: str
+    version: int
+    content_hash: str
+    allowed_origins: List[str] = Field(default_factory=list)
+    sensitive_actions: List[Dict[str, Any]] = Field(default_factory=list)
+    expires_at: Optional[str] = None
+
+
+class AgUiStepUpdateEvent(AgUiBaseEvent):
+    type: AgUiEventType = AgUiEventType.STEP_UPDATE
+    step_id: str
+    step_index: int
+    total_steps: int
+    action: str
+    target_name: Optional[str] = None
+    status: str = "running"  # "pending", "running", "passed", "failed"
+    error_message: Optional[str] = None
+
+
+class AgUiVerificationEvent(AgUiBaseEvent):
+    type: AgUiEventType = AgUiEventType.VERIFICATION
+    verification_state: str  # "VERIFIED_SUCCESS", "FAILED", "UNCERTAIN"
+    passed: bool
+    postconditions: List[Dict[str, Any]] = Field(default_factory=list)
+    reason: Optional[str] = None
+
+
+class AgUiResultEvent(AgUiBaseEvent):
+    type: AgUiEventType = AgUiEventType.RESULT
+    success: bool
+    run_id: Optional[str] = None
+    summary: str
+    outputs: Dict[str, Any] = Field(default_factory=dict)
+
+
+class AgUiErrorEvent(AgUiBaseEvent):
+    type: AgUiEventType = AgUiEventType.ERROR
+    error_code: str
+    message: str
+    recovery_suggestion: Optional[str] = None
+    is_success: bool = False  # Enforces Rule 3: error cards never use success styling
+

@@ -10,7 +10,7 @@ type Props = {
 };
 
 const runStateLabel: Record<string, string> = {
-  SUCCESS: "Complete", FAILED: "Not completed", STOPPED: "Stopped", UNCERTAIN: "Needs review",
+  SUCCESS: "Complete", FAILED: "FAILED", STOPPED: "Stopped", UNCERTAIN: "Needs review",
   PENDING_CONFIRMATION: "Waiting for your review", EXECUTING_STEP: "Running", PRECHECK: "Checking plan",
 };
 
@@ -267,7 +267,7 @@ export const RunMonitor: React.FC<Props> = ({
 
             {currentRun.verification_state && (
               <div className={`verification-badge ver-${currentRun.verification_state.toLowerCase()}`}>
-                Result: <strong>{currentRun.verification_state === "VERIFIED_SUCCESS" ? "Confirmed" : currentRun.verification_state === "FAILED" ? "Not completed" : "Needs review"}</strong>
+                Result: <strong>{currentRun.verification_state === "VERIFIED_SUCCESS" ? "Confirmed" : currentRun.verification_state === "FAILED" ? "FAILED" : "Needs review"}</strong>
               </div>
             )}
           </div>
@@ -290,7 +290,7 @@ export const RunMonitor: React.FC<Props> = ({
                     <span className={`badge-policy badge-policy-${sr.decision.toLowerCase()}`}>
                       {sr.decision === "ALLOW" ? "Allowed" : sr.decision === "REQUIRE_CONFIRMATION" ? "Review needed" : "Blocked"}
                     </span>
-                    <span className={`step-result-state ${sr.passed ? "is-complete" : "is-failed"}`}>{sr.passed ? "Completed" : "Failed"}</span>
+                    <span className={`step-result-state ${sr.passed ? "is-complete" : "is-failed"}`}>{sr.passed ? "Completed" : "FAILED"}</span>
                   </div>
                   {sr.error_message && (
                     <div className="step-error-text">❌ {explainRunError(sr.error_message)}{sr.error_message.includes("Element target could not be resolved by any strategy") && <details><summary>Captured target details</summary><code>{sr.error_message}</code></details>}</div>

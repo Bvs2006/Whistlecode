@@ -1,5 +1,11 @@
-import pytest
+import sys
 from pathlib import Path
+import pytest
+
+backend_dir = Path(__file__).resolve().parents[1]
+if str(backend_dir) not in sys.path:
+    sys.path.insert(0, str(backend_dir))
+
 from backend.app.db import database
 
 @pytest.fixture(autouse=True)

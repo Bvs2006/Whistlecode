@@ -46,7 +46,7 @@ class BaseAIProvider(ABC):
 class GeminiProvider(BaseAIProvider):
     """Google Gemini AI Provider using direct REST API."""
 
-    def __init__(self, api_key: Optional[str] = None, model: str = "gemini-2.0-flash"):
+    def __init__(self, api_key: Optional[str] = None, model: str = "gemini-2.5-flash"):
         super().__init__("Google Gemini")
         self.model = model
         self._explicit_key = api_key
@@ -293,6 +293,118 @@ class GroqProvider(BaseAIProvider):
                         continue
 
 
+class OpenRouterProvider(BaseAIProvider):
+    """OpenRouter Provider for broad model access and fallback routing."""
+
+    def __init__(self, api_key: Optional[str] = None, model: str = "meta-llama/llama-3.3-70b-instruct"):
+        super().__init__("OpenRouter")
+        self.model = model
+        self._explicit_key = api_key
+
+    def get_api_key(self) -> Optional[str]:
+        if self._explicit_key:
+            return self._explicit_key
+        stored = get_secret("integ_openrouter")
+        if stored:
+            return stored
+        return os.getenv("OPENROUTER_API_KEY")
+
+    async def test_connection(self) -> Dict[str, Any]:
+        key = self.get_api_key()
+        if not key:
+            return {
+                "status": "not_configured",
+                "message": "OpenRouter API key is not configured. Add it in Integrations to enable OpenRouter fallback.",
+            }
+        url = "https://openrouter.ai/api/v1/models"
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, headers={"Authorization": f"Bearer {key}", "User-Agent": "WhistleCode"})
+                if resp.status_code == 200:
+                    models = resp.json().get("data", [])
+                    return {
+                        "status": "success",
+                        "message": f"Connected to OpenRouter. {len(models)} models available.",
+                        "model": self.model,
+                    }
+                return {"status": "error", "message": f"OpenRouter API error HTTP {resp.status_code}"}
+        except Exception as exc:
+            return {"status": "error", "message": f"OpenRouter connection failed: {str(exc)}"}
+
+    async def generate_text(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float = 0.2,
+        max_tokens: int = 2048,
+        response_format: Optional[str] = None,
+    ) -> str:
+        key = self.get_api_key()
+        if not key:
+            raise RuntimeError("OpenRouter API key is not configured.")
+
+        body: Dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if response_format == "json":
+            body["response_format"] = {"type": "json_object"}
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "http://localhost:5173",
+                    "X-Title": "WhistleCode",
+                },
+                json=body,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return data["choices"][0]["message"]["content"]
+
+    async def stream_text(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float = 0.4,
+    ) -> AsyncGenerator[str, None]:
+        key = self.get_api_key()
+        if not key:
+            raise RuntimeError("OpenRouter API key is not configured.")
+
+        body = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "stream": True,
+        }
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            async with client.stream(
+                "POST",
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "http://localhost:5173",
+                    "X-Title": "WhistleCode",
+                },
+                json=body,
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if line.startswith("data: ") and line.strip() != "data: [DONE]":
+                        try:
+                            chunk = json.loads(line[6:])
+                            content = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                            if content:
+                                yield content
+                        except Exception:
+                            pass
+
+
 class OllamaProvider(BaseAIProvider):
     """Local Ollama Provider."""
 
@@ -378,7 +490,22 @@ class AIProviderRouter:
     def __init__(self):
         self.gemini = GeminiProvider()
         self.groq = GroqProvider()
+        self.openrouter = OpenRouterProvider()
         self.ollama = OllamaProvider()
+
+    def get_provider(self, provider: Optional[str]) -> Optional[BaseAIProvider]:
+        if not provider:
+            return None
+        providers = {
+            "gemini": self.gemini,
+            "groq": self.groq,
+            "openrouter": self.openrouter,
+            "ollama": self.ollama,
+        }
+        selected = providers.get(provider.strip().lower())
+        if selected is None:
+            raise ValueError(f"Unknown AI provider '{provider}'.")
+        return selected
 
     def get_active_provider(self) -> BaseAIProvider:
         # 1. Prefer Gemini if configured
@@ -387,7 +514,10 @@ class AIProviderRouter:
         # 2. Prefer Groq if configured
         if self.groq.get_api_key():
             return self.groq
-        # 3. Fall back to Ollama
+        # 3. Prefer OpenRouter if configured
+        if self.openrouter.get_api_key():
+            return self.openrouter
+        # 4. Fall back to Ollama
         return self.ollama
 
     async def generate_text(
@@ -396,7 +526,11 @@ class AIProviderRouter:
         temperature: float = 0.2,
         max_tokens: int = 2048,
         response_format: Optional[str] = None,
+        provider: Optional[str] = None,
     ) -> str:
+        selected = self.get_provider(provider)
+        if selected:
+            return await selected.generate_text(messages, temperature, max_tokens, response_format)
         # Try primary Gemini
         if self.gemini.get_api_key():
             try:
@@ -411,18 +545,31 @@ class AIProviderRouter:
             except Exception as e:
                 logger.warning(f"Groq generation failed, trying fallback: {e}")
 
+        # Try OpenRouter fallback
+        if self.openrouter.get_api_key():
+            try:
+                return await self.openrouter.generate_text(messages, temperature, max_tokens, response_format)
+            except Exception as e:
+                logger.warning(f"OpenRouter generation failed, trying fallback: {e}")
+
         # Try Ollama fallback
         try:
             return await self.ollama.generate_text(messages, temperature, max_tokens, response_format)
         except Exception as e:
             logger.warning(f"Ollama generation failed: {e}")
-            raise RuntimeError("No configured AI Provider is currently reachable. Please configure Gemini or Groq API keys in Integrations.")
+            raise RuntimeError("No configured AI Provider is currently reachable. Please configure Gemini, Groq, or OpenRouter API keys in Integrations.")
 
     async def stream_text(
         self,
         messages: List[Dict[str, str]],
         temperature: float = 0.4,
+        provider: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
+        selected = self.get_provider(provider)
+        if selected:
+            async for chunk in selected.stream_text(messages, temperature):
+                yield chunk
+            return
         # 1. Gemini
         if self.gemini.get_api_key():
             try:
@@ -441,7 +588,16 @@ class AIProviderRouter:
             except Exception as e:
                 logger.warning(f"Groq streaming failed: {e}")
 
-        # 3. Ollama
+        # 3. OpenRouter
+        if self.openrouter.get_api_key():
+            try:
+                async for chunk in self.openrouter.stream_text(messages, temperature):
+                    yield chunk
+                return
+            except Exception as e:
+                logger.warning(f"OpenRouter streaming failed: {e}")
+
+        # 4. Ollama
         try:
             async for chunk in self.ollama.stream_text(messages, temperature):
                 yield chunk

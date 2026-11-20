@@ -9,7 +9,7 @@ type Props = {
 };
 
 const runStateLabel: Record<string, string> = {
-  SUCCESS: "Complete", FAILED: "Not completed", STOPPED: "Stopped", UNCERTAIN: "Needs review",
+  SUCCESS: "Complete", FAILED: "FAILED", STOPPED: "Stopped", UNCERTAIN: "Needs review",
   PENDING_CONFIRMATION: "Waiting for your review", EXECUTING_STEP: "Running", PRECHECK: "Checking plan",
 };
 

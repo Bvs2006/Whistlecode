@@ -138,15 +138,33 @@ export type ParameterDefinition = {
   required: boolean;
 };
 
+export type SurfaceType = "browser" | "desktop" | "file";
+
+export type TargetCandidate = {
+  strategy: string;
+  value: string | Record<string, any>;
+  confidence?: number;
+  matched?: boolean;
+};
+
+export type AllowedScope = {
+  domains: string[];
+  apps: string[];
+  folders: string[];
+};
+
 export type Step = {
   id: string;
   name: string;
   action: ActionType;
+  surface?: SurfaceType;
   target?: TargetDescriptor;
+  target_candidates?: TargetCandidate[];
   args: Record<string, any>;
   risk: RiskLevel;
   requires_confirmation: boolean;
   idempotent: boolean;
+  timeout_seconds?: number;
   preconditions: Precondition[];
   postconditions: Postcondition[];
   enabled: boolean;
@@ -176,6 +194,7 @@ export type WorkflowDefinition = {
   title: string;
   intent: string;
   allowed_origins: string[];
+  allowed_scope?: AllowedScope;
   parameters: ParameterDefinition[];
   steps: Step[];
   final_postconditions: Postcondition[];
@@ -185,6 +204,15 @@ export type WorkflowDefinition = {
   parent_version?: number;
   change_summary?: string;
   created_at?: string;
+};
+
+export type NormalizedRecorderEvent = {
+  surface: SurfaceType;
+  action: string;
+  target_candidates: TargetCandidate[];
+  value?: string;
+  redacted: boolean;
+  timestamp: number;
 };
 
 export type RecordedEvent = {
@@ -217,6 +245,7 @@ export type ApprovalRecord = {
   version_hash: string;
   scope: {
     allowed_origins: string[];
+    allowed_scope?: AllowedScope;
     allowed_action_types: string[];
     parameter_constraints: Record<string, any>;
     max_risk_level: string;
@@ -232,6 +261,8 @@ export type StepExecutionResult = {
   step_id: string;
   action: string;
   target_summary?: string;
+  matched_target_strategy?: string;
+  matched_target_value?: any;
   decision: "ALLOW" | "REQUIRE_CONFIRMATION" | "DENY";
   reason_code: string;
   passed: boolean;
@@ -329,3 +360,14 @@ export type WorkflowSearchResult = {
   relevance_score: number;
   match_reasons: string[];
 };
+
+export type AgUiEvent =
+  | { type: "status"; phase: string; message?: string }
+  | { type: "capability_result"; outcome: string; severity: "green" | "amber" | "red"; reason: string; surface?: SurfaceType; surface_confidence?: number; target_hints?: any; matched_workflow_id?: string; missing_integration_id?: string }
+  | { type: "plan"; workflow_id: string; title: string; summary: string; steps: any[]; allowed_origins: string[]; risk: string; sensitive_step_ids?: string[]; content_hash?: string; version?: number }
+  | { type: "input_request"; request_id: string; kind: string; question: string; explanation?: string; options?: string[]; surface_options?: Array<{ surface: string; label: string; description: string; available: boolean }> }
+  | { type: "approval_request"; approval_id: string; workflow_id: string; version: number; allowed_origins: string[]; sensitive_actions: any[] }
+  | { type: "step_update"; step_id: string; step_index: number; total_steps: number; action: string; target_name?: string; status: "pending" | "running" | "passed" | "failed"; error_message?: string }
+  | { type: "verification"; verification_state: "VERIFIED_SUCCESS" | "FAILED" | "UNCERTAIN"; passed: boolean; postconditions?: any[]; reason?: string }
+  | { type: "result"; success: boolean; run_id?: string; summary: string; outputs?: Record<string, any> }
+  | { type: "error"; error_code: string; message: string; recovery_suggestion?: string; is_success?: boolean };

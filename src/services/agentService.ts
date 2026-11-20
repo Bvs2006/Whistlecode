@@ -117,8 +117,20 @@ export const agentService = {
     return data.agent;
   },
 
+  async duplicateAgent(id: string): Promise<AgentDefinition> {
+    const res = await fetch(`/api/agents/${id}/duplicate`, { method: "POST" });
+    if (!res.ok) throw new Error("Failed to duplicate agent");
+    const data = await res.json();
+    return data.agent;
+  },
+
   async archiveAgent(id: string): Promise<void> {
     const res = await fetch(`/api/agents/${id}`, { method: "DELETE" });
     if (!res.ok) throw new Error("Failed to archive agent");
+  },
+
+  async deleteAgent(id: string): Promise<void> {
+    const res = await fetch(`/api/agents/${id}?permanent=true`, { method: "DELETE" });
+    if (!res.ok) throw new Error("Failed to delete agent");
   },
 };

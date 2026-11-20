@@ -8,8 +8,9 @@ DB_PATH = Path(__file__).parent.parent.parent / "whistlecode.db"
 
 
 def get_db_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH), timeout=10)
-    conn.execute("PRAGMA busy_timeout = 10000")
+    conn = sqlite3.connect(str(DB_PATH), timeout=15)
+    conn.execute("PRAGMA busy_timeout = 15000")
+    conn.execute("PRAGMA journal_mode = WAL")
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -197,6 +198,13 @@ def init_db():
         last_tested_at TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS integration_oauth_states (
+        state TEXT PRIMARY KEY,
+        integration_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS automations (

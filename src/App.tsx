@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Header } from "./components/Header";
 import { Sidebar } from "./components/Sidebar";
 import { AskAIView } from "./components/views/AskAIView";
 import { OverviewView } from "./components/views/OverviewView";
@@ -20,6 +19,7 @@ import { AutomationsView } from "./components/automations/AutomationsView";
 import { UnifiedActivityCenter } from "./components/activity/UnifiedActivityCenter";
 import { WorkflowTemplatesView } from "./components/templates/WorkflowTemplatesView";
 import { SettingsView } from "./components/views/SettingsView";
+import { api } from "./api/client";
 
 const createEmptyWorkflow = (): WorkflowDefinition => ({
   workflow_id: `wf_${crypto.randomUUID()}`,
@@ -40,7 +40,6 @@ type AskAICommand =
 type AskAIAction = { kind: "new-chat" } | { kind: "open-thread"; threadId: string };
 
 export function App() {
-  const [theme, setTheme] = useState<"dark" | "light">(() => localStorage.getItem("whistlecode.theme") === "light" ? "light" : "dark");
   const [activeSection, setActiveSection] = useState<AppSection>("Ask AI");
   const [initialGoal, setInitialGoal] = useState("");
   const [currentWorkflow, setCurrentWorkflow] = useState<WorkflowDefinition>(createEmptyWorkflow);
@@ -48,11 +47,24 @@ export function App() {
   const [showWorkspace, setShowWorkspace] = useState(false);
   const [recordingPreset, setRecordingPreset] = useState<{ url: string; description: string } | null>(null);
   const [askAICommand, setAskAICommand] = useState<AskAICommand | null>(null);
+  const [savedWorkflows, setSavedWorkflows] = useState<WorkflowDefinition[]>([]);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    try { localStorage.setItem("whistlecode.theme", theme); } catch { /* Theme preference is optional. */ }
-  }, [theme]);
+    document.documentElement.dataset.theme = "light";
+  }, []);
+
+  useEffect(() => {
+    if (!showWorkspace) return;
+    let active = true;
+    api.listWorkflows()
+      .then((response) => {
+        if (active) setSavedWorkflows((response.workflows || []).map((item: any) => item.latest_data).filter(Boolean));
+      })
+      .catch(() => {
+        if (active) setSavedWorkflows([]);
+      });
+    return () => { active = false; };
+  }, [showWorkspace]);
 
   const handleWorkflowGenerated = (wf: WorkflowDefinition) => {
     setCurrentWorkflow(wf);
@@ -65,6 +77,7 @@ export function App() {
   const handleWorkflowSaved = (wf: WorkflowDefinition) => {
     setCurrentWorkflow(wf);
     setActiveApproval(null);
+    setSavedWorkflows((current) => [wf, ...current.filter((item) => item.workflow_id !== wf.workflow_id)]);
   };
 
   const handleWorkflowDraftUpdated = (wf: WorkflowDefinition) => {
@@ -88,23 +101,16 @@ export function App() {
   }} />;
 
   return (
-    <div className="app-shell" data-theme={theme}>
+    <div className="app-shell" data-theme="light">
       {/* 1. LEFT SIDEBAR (Image 1 style) */}
       <Sidebar
         activeSection={activeSection}
-        theme={theme}
         onNavigate={handleNavigate}
         onAskAIAction={handleAskAIAction}
-        onToggleTheme={() => setTheme((current) => current === "dark" ? "light" : "dark")}
       />
 
       {/* 2. MAIN VIEWPORT */}
       <main className="main-viewport">
-        {/* Sleek 10-Stage Lifecycle Ribbon */}
-        {activeSection !== "Ask AI" && <Header
-          activeSection={activeSection}
-        />}
-
         {/* 1. WORKSPACE / OVERVIEW */}
         {(activeSection === "Overview" || activeSection === "Workspace") && (
           <OverviewView
@@ -239,10 +245,15 @@ export function App() {
             onNavigate={handleNavigate}
             onWorkflowGenerated={handleWorkflowGenerated}
             onWorkflowUpdated={handleWorkflowDraftUpdated}
+            onApprovalUpdated={setActiveApproval}
             initialPrompt={initialGoal}
+            savedWorkflows={savedWorkflows}
             activeWorkflow={currentWorkflow.steps.length ? currentWorkflow : undefined}
             activeApproval={activeApproval}
-            theme={theme}
+            onStartRecording={(preset) => {
+              setRecordingPreset(preset);
+              setActiveSection("Teach");
+            }}
             sidebarCommand={askAICommand}
           />
         )}

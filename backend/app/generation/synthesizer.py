@@ -338,6 +338,15 @@ class WorkflowSynthesizer:
             if t in concept_map:
                 expanded_tokens.update(concept_map[t])
 
+        destination_aliases = {
+            "google maps": ("google maps", "maps"),
+            "wikipedia": ("wikipedia", "wikipidia"),
+        }
+        required_destination = next(
+            (aliases for destination, aliases in destination_aliases.items() if destination in q_clean),
+            None,
+        )
+
         results = []
         for wf in workflows:
             score = 0.0
@@ -347,6 +356,13 @@ class WorkflowSynthesizer:
             intent = (wf.get("intent") or "").lower()
             params = " ".join([p.get("name", "") for p in wf.get("parameters", [])]).lower()
             steps_text = " ".join([s.get("name", "") + " " + (s.get("notes") or "") for s in wf.get("steps", [])]).lower()
+            workflow_text = " ".join((title, intent, params, steps_text))
+
+            # Do not reuse a workflow for a different named destination.
+            # A generic keyword such as "search" must not make Wikipedia
+            # appear to satisfy a Google Maps request.
+            if required_destination and not any(alias in workflow_text for alias in required_destination):
+                continue
 
             # Exact phrase match
             if q_clean in title:

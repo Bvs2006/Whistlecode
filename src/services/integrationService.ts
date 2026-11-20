@@ -18,6 +18,8 @@ export interface IntegrationDefinition {
   required_permissions: string[];
   config_schema: Record<string, any>;
   has_credentials: boolean;
+  masked_credential?: string;
+  credential_source?: "vault" | "env" | "none";
   availability?: string;
   status_detail?: string;
   last_tested_at?: string;
@@ -46,6 +48,14 @@ export async function connectIntegration(
   if (!res.ok) throw new Error(await readError(res, "Failed to connect integration"));
   const data = await res.json();
   return data.integration;
+}
+
+export async function startIntegrationOAuth(integId: string): Promise<string> {
+  const res = await fetch(`${API_BASE}/api/integrations/${integId}/oauth/start`, { method: "POST" });
+  if (!res.ok) throw new Error(await readError(res, "OAuth sign-in could not be started"));
+  const data = await res.json();
+  if (typeof data.authorization_url !== "string") throw new Error("OAuth provider did not return a sign-in URL.");
+  return data.authorization_url;
 }
 
 export async function disconnectIntegration(integId: string): Promise<IntegrationDefinition> {
