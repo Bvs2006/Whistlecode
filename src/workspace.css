@@ -1539,24 +1539,29 @@ input[type="checkbox"], input[type="radio"] { accent-color: #9bca82; }
 }
 
 /* WhistleCode light-only application shell */
-.landing-page,
 .app-shell {
-  --color-page: #f5f7f5;
+  --color-page: #f5f5f5;
   --color-surface: #ffffff;
-  --color-surface-soft: #eef2ef;
-  --color-border: #d8e0da;
-  --color-text: #17251c;
-  --color-text-secondary: #5f6f64;
-  --color-accent: #286a43;
-  --color-accent-soft: #e7f1ea;
-  --color-focus: #2f7d4b;
+  --color-surface-soft: #eeeeee;
+  --color-border: #d4d4d4;
+  --color-text: #171717;
+  --color-text-secondary: #626262;
+  --color-accent: #171717;
+  --color-accent-soft: #e8e8e8;
+  --color-focus: #525252;
 }
 
 .landing-page {
-  background:
-    radial-gradient(ellipse 42% 18% at 12% 12%, #c7dfcf66, transparent 70%),
-    radial-gradient(ellipse 38% 18% at 88% 36%, #e8dcb566, transparent 72%),
-    #f7f8f5 !important;
+  --color-page: #080808;
+  --color-surface: #111111;
+  --color-surface-soft: #191919;
+  --color-border: #303030;
+  --color-text: #f5f5f5;
+  --color-text-secondary: #a3a3a3;
+  --color-accent: #ffffff;
+  --color-accent-soft: #242424;
+  --color-focus: #d4d4d4;
+  background: #080808 !important;
   color: var(--color-text) !important;
 }
 
@@ -1585,7 +1590,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: #9bca82; }
 }
 
 .landing-page .landing-nav {
-  background: #ffffffed !important;
+  background: #080808ed !important;
   border-bottom-color: var(--color-border) !important;
   backdrop-filter: blur(16px);
 }
@@ -1628,21 +1633,21 @@ input[type="checkbox"], input[type="radio"] { accent-color: #9bca82; }
 
 .landing-page .nav-cta,
 .landing-page .primary-cta {
-  border: 1px solid #2d7048 !important;
-  background: #2f7450 !important;
-  color: #ffffff !important;
-  box-shadow: 0 8px 20px #2f745022 !important;
+  border: 1px solid #ffffff !important;
+  background: #ffffff !important;
+  color: #080808 !important;
+  box-shadow: 0 8px 24px #ffffff18 !important;
 }
 
 .landing-page .nav-cta:hover,
 .landing-page .primary-cta:hover {
-  background: #285f43 !important;
-  color: #ffffff !important;
+  background: #d4d4d4 !important;
+  color: #080808 !important;
 }
 
 .landing-page .nav-cta span,
 .landing-page .primary-cta span {
-  color: #dff1e6 !important;
+  color: #080808 !important;
 }
 
 .landing-page .landing-prompt-form,
@@ -1672,7 +1677,59 @@ input[type="checkbox"], input[type="radio"] { accent-color: #9bca82; }
 .landing-page .approval-kicker,
 .landing-page .landing-prompt-greeting span,
 .landing-page .landing-prompt-suggestions > span {
-  color: #607064 !important;
+  color: #a3a3a3 !important;
+}
+
+.landing-page::before,
+.landing-page::after,
+.landing-page .hero-art::before,
+.landing-page .hero-light-curtain .curtain-column,
+.landing-page .hero-light-curtain .curtain-column::before {
+  background-image: none !important;
+  background-color: transparent !important;
+}
+
+.landing-page .eyebrow-dot,
+.landing-page .signal-pulse,
+.landing-page .signal-pulse-soft,
+.landing-page .landing-live-dot {
+  background: #ffffff !important;
+  fill: #ffffff !important;
+  box-shadow: 0 0 10px #ffffff55 !important;
+}
+
+.landing-page .landing-prompt-form-foot button {
+  border-color: #ffffff !important;
+  background: #ffffff !important;
+  color: #080808 !important;
+}
+
+.landing-page .capability-icon,
+.landing-page .landing-integration-icon,
+.landing-page .closing-mark {
+  border-color: #404040 !important;
+  background: #202020 !important;
+  color: #ffffff !important;
+}
+
+.landing-page .landing-prompt-suggestions button:hover {
+  border-color: #737373 !important;
+  background: #242424 !important;
+  color: #ffffff !important;
+}
+
+.landing-page .landing-integration-status.available,
+.landing-page .showcase-caption > b,
+.landing-page .landing-prompt-trust > span,
+.landing-page .activity-wait i,
+.landing-page .activity-wait time {
+  color: #e5e5e5 !important;
+}
+
+.landing-page .landing-integration-note {
+  border-color: #303030 !important;
+  background: #141414 !important;
+  color: #b3b3b3 !important;
 }
 
 .app-shell,
@@ -3924,3 +3981,11 @@ body { background: var(--wc-page); color: var(--wc-text); }
   .app-shell .feature-primary-action,
   .landing-page .primary-cta { transition: none; }
 }
+
+.landing-page .signal-track { stroke: #ffffff55 !important; }
+.landing-page .signal-pulse, .landing-page .signal-pulse-soft { fill: #ffffff !important; }
+.landing-page .orbit { border-color: #ffffff20 !important; }
+.landing-page .hero-art::before { background: radial-gradient(ellipse, #ffffff0c, transparent 72%) !important; }
+.landing-page .brand-lockup img, .landing-page .closing-mark img { filter: grayscale(1) brightness(0) invert(1); }
+.landing-page .landing-integration-status.available,
+.landing-page .showcase-caption > b { color: #e5e5e5 !important; }
