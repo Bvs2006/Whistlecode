@@ -2,10 +2,14 @@ from __future__ import annotations
 import json
 import sqlite3
 import datetime
+import os
+import secrets
+import urllib.parse
+import httpx
 from typing import List, Optional, Dict, Any
 from app.credentials.store import CredentialStoreError, delete_secret, has_secret, put_secret
 from app.db.database import get_db
-from app.integrations.probes import local_availability, playwright_available, probe_integration
+from app.integrations.probes import get_credential_metadata, local_availability, playwright_available, probe_integration
 from app.models.integration import IntegrationDefinition, IntegrationStatus, IntegrationToolSchema
 from app.tools.filesystem import sandbox_root
 
@@ -118,6 +122,41 @@ INITIAL_INTEGRATIONS = [
         "config_schema": {"repository": "string", "default_branch": "string"}
     },
     {
+        "id": "integ_microsoft",
+        "name": "Microsoft 365",
+        "description": "Connect Outlook, OneDrive, and Microsoft Calendar through Microsoft identity sign-in.",
+        "category": "microsoft_workspace",
+        "status": IntegrationStatus.DISCONNECTED,
+        "icon": "Calendar",
+        "is_mcp": False,
+        "endpoint_or_server": "https://graph.microsoft.com",
+        "available_tools": [
+            {"name": "read_mail", "description": "Reads approved Outlook messages", "required_permissions": ["read_email"]},
+            {"name": "list_files", "description": "Lists approved OneDrive files", "required_permissions": ["read_drive"]},
+            {"name": "create_event", "description": "Creates a calendar event after approval", "required_permissions": ["write_calendar"]}
+        ],
+        "required_permissions": ["read_email", "read_drive", "write_calendar"],
+        "has_credentials": False,
+        "config_schema": {}
+    },
+    {
+        "id": "integ_slack",
+        "name": "Slack",
+        "description": "Slack workspace connection for posting approved notifications and reading channel metadata.",
+        "category": "communication",
+        "status": IntegrationStatus.DISCONNECTED,
+        "icon": "Mail",
+        "is_mcp": False,
+        "endpoint_or_server": "https://slack.com/api",
+        "available_tools": [
+            {"name": "post_message", "description": "Posts a message to an approved Slack channel", "required_permissions": ["write_slack"]},
+            {"name": "list_channels", "description": "Lists channels visible to the connected Slack app", "required_permissions": ["read_slack"]}
+        ],
+        "required_permissions": ["read_slack", "write_slack"],
+        "has_credentials": False,
+        "config_schema": {"api_key": "secret", "default_channel": "string"}
+    },
+    {
         "id": "integ_mcp_servers",
         "name": "MCP Server Connector",
         "description": "Model Context Protocol client for connecting any local or remote stdio/SSE MCP server tools.",
@@ -167,6 +206,22 @@ INITIAL_INTEGRATIONS = [
         "config_schema": {"api_key": "secret", "model": "string"}
     },
     {
+        "id": "integ_grok",
+        "name": "Grok",
+        "description": "xAI Grok provider for fast conversational and workflow assistance.",
+        "category": "ai_provider",
+        "status": IntegrationStatus.DISCONNECTED,
+        "icon": "Zap",
+        "is_mcp": False,
+        "endpoint_or_server": "https://api.x.ai/v1",
+        "available_tools": [
+            {"name": "generate_text", "description": "Sends a prompt to Grok when a key is configured", "required_permissions": ["ai_generate"]}
+        ],
+        "required_permissions": ["ai_generate"],
+        "has_credentials": False,
+        "config_schema": {"api_key": "secret", "model": "string"}
+    },
+    {
         "id": "integ_ollama",
         "name": "Ollama",
         "description": "Optional local model runtime. Status comes from a live request to the local Ollama service.",
@@ -201,8 +256,38 @@ INITIAL_INTEGRATIONS = [
 ]
 
 
-SECRET_INTEGRATIONS = {"integ_gemini", "integ_groq", "integ_openrouter", "integ_github"}
+SECRET_INTEGRATIONS = {"integ_gemini", "integ_groq", "integ_grok", "integ_openrouter", "integ_github", "integ_slack"}
 EXTERNAL_UNREADY = {"integ_gmail", "integ_gdrive", "integ_gcalendar", "integ_mcp_servers"}
+OAUTH_INTEGRATIONS = {
+    "integ_gmail": {
+        "authorize": "https://accounts.google.com/o/oauth2/v2/auth",
+        "token": "https://oauth2.googleapis.com/token",
+        "client_id": "GOOGLE_OAUTH_CLIENT_ID",
+        "client_secret": "GOOGLE_OAUTH_CLIENT_SECRET",
+        "scopes": "openid email https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/calendar",
+    },
+    "integ_github": {
+        "authorize": "https://github.com/login/oauth/authorize",
+        "token": "https://github.com/login/oauth/access_token",
+        "client_id": "GITHUB_OAUTH_CLIENT_ID",
+        "client_secret": "GITHUB_OAUTH_CLIENT_SECRET",
+        "scopes": "read:user repo",
+    },
+    "integ_slack": {
+        "authorize": "https://slack.com/oauth/v2/authorize",
+        "token": "https://slack.com/api/oauth.v2.access",
+        "client_id": "SLACK_OAUTH_CLIENT_ID",
+        "client_secret": "SLACK_OAUTH_CLIENT_SECRET",
+        "scopes": "chat:write,channels:read,users:read",
+    },
+    "integ_microsoft": {
+        "authorize": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+        "token": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+        "client_id": "MICROSOFT_OAUTH_CLIENT_ID",
+        "client_secret": "MICROSOFT_OAUTH_CLIENT_SECRET",
+        "scopes": "offline_access openid profile User.Read Mail.Read Files.ReadWrite Calendars.ReadWrite",
+    },
+}
 
 
 class IntegrationConfigError(Exception):
@@ -212,6 +297,87 @@ class IntegrationConfigError(Exception):
 
 
 class IntegrationHubService:
+    @staticmethod
+    def oauth_redirect_uri() -> str:
+        return os.getenv(
+            "WHISTLECODE_OAUTH_REDIRECT_URI",
+            "http://127.0.0.1:8000/api/integrations/oauth/callback",
+        )
+
+    @classmethod
+    def create_oauth_authorization(cls, integ_id: str) -> str:
+        config = OAUTH_INTEGRATIONS.get(integ_id)
+        current = cls.get_integration(integ_id)
+        if not current:
+            raise IntegrationConfigError(f"Integration '{integ_id}' not found.", 404)
+        if not config:
+            raise IntegrationConfigError(f"{current.name} does not support OAuth in this configuration.")
+        client_id = os.getenv(config["client_id"])
+        client_secret = os.getenv(config["client_secret"])
+        if not client_id or not client_secret:
+            raise IntegrationConfigError(
+                f"{current.name} OAuth is not configured. Set {config['client_id']} and {config['client_secret']} on the server."
+            )
+        state = secrets.token_urlsafe(32)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        conn = get_db()
+        conn.execute(
+            "INSERT INTO integration_oauth_states (state, integration_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+            (state, integ_id, now.isoformat(), (now + datetime.timedelta(minutes=10)).isoformat()),
+        )
+        conn.commit()
+        conn.close()
+        params = {
+            "client_id": client_id,
+            "redirect_uri": cls.oauth_redirect_uri(),
+            "response_type": "code",
+            "state": state,
+            "scope": config["scopes"],
+        }
+        if integ_id == "integ_gmail":
+            params["access_type"] = "offline"
+            params["prompt"] = "consent"
+        return config["authorize"] + "?" + urllib.parse.urlencode(params)
+
+    @classmethod
+    async def complete_oauth(cls, code: str, state: str) -> IntegrationDefinition:
+        conn = get_db()
+        row = conn.execute(
+            "SELECT integration_id, expires_at FROM integration_oauth_states WHERE state = ?",
+            (state,),
+        ).fetchone()
+        conn.execute("DELETE FROM integration_oauth_states WHERE state = ?", (state,))
+        conn.commit()
+        conn.close()
+        if not row or datetime.datetime.fromisoformat(row["expires_at"]) <= datetime.datetime.now(datetime.timezone.utc):
+            raise IntegrationConfigError("OAuth state is invalid or expired.", 400)
+        integ_id = row["integration_id"]
+        config = OAUTH_INTEGRATIONS.get(integ_id)
+        client_id = os.getenv(config["client_id"]) if config else None
+        client_secret = os.getenv(config["client_secret"]) if config else None
+        if not config or not client_id or not client_secret:
+            raise IntegrationConfigError("OAuth provider configuration is incomplete.", 503)
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.post(config["token"], data={
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "code": code,
+                "redirect_uri": cls.oauth_redirect_uri(),
+                "grant_type": "authorization_code",
+            }, headers={"Accept": "application/json"})
+        if response.status_code >= 400:
+            raise IntegrationConfigError("The provider rejected the OAuth sign-in.", 502)
+        payload = response.json()
+        access_token = payload.get("access_token")
+        if not access_token:
+            raise IntegrationConfigError("OAuth completed without an access token.", 502)
+        put_secret(integ_id, access_token)
+        cls._set_status(integ_id, IntegrationStatus.CONNECTED, has_credentials=True)
+        result = cls.get_integration(integ_id)
+        if not result:
+            raise IntegrationConfigError("Connected integration could not be loaded.", 500)
+        return result
+
     @staticmethod
     def _row_to_integration(row: sqlite3.Row) -> IntegrationDefinition:
         tools = []
@@ -313,7 +479,10 @@ class IntegrationHubService:
         availability, detail = local_availability(integration.id)
         integration.availability = availability
         integration.status_detail = detail
-        integration.has_credentials = has_secret(integration.id)
+        meta = get_credential_metadata(integration.id)
+        integration.has_credentials = meta["has_credentials"]
+        integration.credential_source = meta["source"]
+        integration.masked_credential = meta["masked"]
         if integration.id in EXTERNAL_UNREADY and integration.status == IntegrationStatus.CONNECTED:
             integration.status = IntegrationStatus.DISCONNECTED
         return integration
@@ -347,6 +516,8 @@ class IntegrationHubService:
         if not current:
             return None
         config = config or {}
+        if integ_id in OAUTH_INTEGRATIONS:
+            raise IntegrationConfigError(f"{current.name} must be connected using OAuth sign-in.")
         if integ_id in EXTERNAL_UNREADY:
             raise IntegrationConfigError(
                 f"{current.name} is not connected. OAuth or an approved MCP server is not configured, so no external call was made."

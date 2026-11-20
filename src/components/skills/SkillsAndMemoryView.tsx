@@ -208,7 +208,7 @@ export const SkillsAndMemoryView: React.FC = () => {
   });
 
   return (
-    <div className="h-full flex flex-col bg-slate-950 text-slate-100 overflow-y-auto">
+    <div className="feature-page skills-page h-full flex flex-col bg-slate-950 text-slate-100 overflow-y-auto">
       {/* Top Banner */}
       <div className="border-b border-slate-800 bg-slate-900/60 px-8 py-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

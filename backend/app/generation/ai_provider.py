@@ -429,11 +429,15 @@ class OllamaAIWorkflowProvider(MockAIWorkflowProvider):
         goal_without_urls = re.sub(r"https?://[^\s<>\"']+", " ", task_goal, flags=re.IGNORECASE)
         opens_only_a_site = bool(
             re.search(
-                r"\b(?:open|visit|go to|navigate to|load)\s+(?:(?:the|a)\s+)?(?:homepage|home page|website|site|home)\b",
+                r"\b(?:open|visit|go to|navigate to|load)\b",
                 goal_without_urls,
                 flags=re.IGNORECASE,
             )
-            and not re.search(r"\b(search|find|click|type|fill|submit|send|delete|update|change|purchase)\b", goal_without_urls, flags=re.IGNORECASE)
+            and not re.search(
+                r"\b(search|find|click|type|fill|submit|send|delete|update|change|purchase|download|upload|login|sign in)\b",
+                goal_without_urls,
+                flags=re.IGNORECASE,
+            )
         )
         if opens_only_a_site and supplied_url:
             parsed_url = urlsplit(supplied_url)

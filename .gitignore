@@ -1,7 +1,11 @@
 backend/approval_signing.key
-backend/whistlecode-test.db
-backend/whistlecode.db
+backend/whistlecode*.db*
 backend/data/
+backend/app/daily_logs/
+*.log
+.whistlecode-*.log
+.env
+!.env.example
 **/__pycache__/
 *.py[cod]
 .pytest_cache/

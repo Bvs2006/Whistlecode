@@ -12,6 +12,9 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import httpx
+import logging
+
+logger = logging.getLogger(__name__)
 
 from .db.database import init_db, get_db_connection
 from .models.workflow import (
@@ -45,10 +48,37 @@ from .skills.skill_service import SkillService
 from .memory.memory_service import MemoryService
 from .models.integration import IntegrationDefinition, IntegrationStatus
 from .integrations.hub import IntegrationConfigError, IntegrationHubService
+from .integrations.ai_providers import ai_router
 from .documents.service import get_artifact
 from .tools.registry import ToolPermissionError, execute_tool, get_tool, list_tools
 from .models.automation import AutomationDefinition, AutomationStatus, TriggerType
 from .automations.scheduler import AutomationService
+
+
+def _load_project_env() -> None:
+    env_path = Path(__file__).resolve().parents[2] / ".env"
+    if not env_path.is_file():
+        return
+
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        if "=" not in line:
+            continue
+
+        name, value = line.split("=", 1)
+        name = name.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        if name and name not in os.environ:
+            os.environ[name] = value
+
+
+_load_project_env()
 
 # Initialize database & seed defaults
 init_db()
@@ -387,12 +417,14 @@ async def synthesize_workflow(req: SynthesizeRequest):
 
 class GoalPlanRequest(BaseModel):
     goal: str
+    provider: Optional[str] = None
 
 class ConversationRequest(BaseModel):
     message: str
     history: List[Dict[str, str]] = Field(default_factory=list)
     active_workflow: Optional[WorkflowDefinition] = None
     attachments: List[Dict[str, str]] = Field(default_factory=list)
+    provider: Optional[str] = None
 
 @app.post("/api/ai/conversation/stream")
 async def stream_conversation(req: ConversationRequest):
@@ -501,7 +533,7 @@ def _get_smart_conversational_response(query: str, workflow_context: Optional[di
     
     if any(q == greet or q.startswith(greet + " ") or q.startswith(greet + "!") or q.startswith(greet + ",") for greet in ["hi", "hello", "hey", "good morning", "good evening", "greetings"]):
         return (
-            "Hello! I am your **ChronicleAI Assistant**.\n\n"
+            "Hello! I am your **WhistleCode Assistant**.\n\n"
             "I help you automate desktop, browser, and enterprise workflows without repetitive manual work. Here is what you can do:\n\n"
             "- **Teach a Task (Record Once)**: Click **Record Demonstration** in the sidebar to capture your actions on any website or desktop app.\n"
             "- **Workflow Templates**: Choose ready-to-run automation recipes (Invoices, Lead Enrichment, Support Triage, Reports) from **Templates**.\n"
@@ -512,7 +544,7 @@ def _get_smart_conversational_response(query: str, workflow_context: Optional[di
     
     if "approval" in q:
         return (
-            "### How Approvals and Governance Work in ChronicleAI\n\n"
+            "### How Approvals and Governance Work in WhistleCode\n\n"
             "ChronicleAI enforces a strict **Human-in-the-Loop (HITL) Security Model**:\n\n"
             "1. **Cryptographic Signatures**: Every workflow draft is hashed. When you review and grant approval, an immutable cryptographic signature is generated.\n"
             "2. **Scoped Allowlisting**: Workflows can only navigate to and interact with authorized domains (`allowed_origins`).\n"
@@ -523,7 +555,7 @@ def _get_smart_conversational_response(query: str, workflow_context: Optional[di
 
     if any(k in q for k in ["report", "spreadsheet", "weekly"]):
         return (
-            "### Weekly Report Automation\n\n"
+            "### Weekly Report Automation in WhistleCode\n\n"
             "You can automate spreadsheet data extraction and report generation easily:\n\n"
             "1. **Template Option**: Go to **Templates** → select **Cross-System Executive Report Generator** to extract metrics and build summaries with 1 click.\n"
             "2. **Record Once Option**: Go to **Record Demonstration**, navigate to your spreadsheet or analytics portal, and demonstrate the export.\n"
@@ -532,7 +564,7 @@ def _get_smart_conversational_response(query: str, workflow_context: Optional[di
 
     if any(k in q for k in ["invoice", "receipt", "accounting"]):
         return (
-            "### Unattended Invoice & Receipt Extraction\n\n"
+            "### Unattended Invoice & Receipt Extraction in WhistleCode\n\n"
             "ChronicleAI handles invoice processing end-to-end:\n\n"
             "- **Inbound Email**: Connects via the **Gmail** integration to detect new invoice attachments.\n"
             "- **Extraction**: Uses the **Invoice Extraction** skill to parse vendor names, due dates, line items, and totals.\n"
@@ -542,7 +574,7 @@ def _get_smart_conversational_response(query: str, workflow_context: Optional[di
 
     if any(k in q for k in ["skill", "skills", "memory"]):
         return (
-            "### Skills & Persistent Memory\n\n"
+            "### Skills & Persistent Memory in WhistleCode\n\n"
             "- **Skills Library**: Reusable capabilities equipped with input/output schemas and execution statistics (e.g. Email Classification, Invoice Extraction, File Organization).\n"
             "- **5-Tier Persistent Memory**:\n"
             "  1. *User Preferences* (e.g. default output directories, approval policies)\n"
@@ -555,7 +587,7 @@ def _get_smart_conversational_response(query: str, workflow_context: Optional[di
 
     # General task answer
     return (
-        f"I received your request: **'{query}'**.\n\n"
+        f"I received your request in WhistleCode: **'{query}'**.\n\n"
         "Here are the best ways to execute this in ChronicleAI:\n\n"
         "1. **Record the Demonstration**: If this involves navigating a website or web app, click **Record Demonstration** in the sidebar to show the actions once. ChronicleAI will automatically synthesize it into a reusable workflow.\n"
         "2. **Use a Pre-built Recipe**: Check the **Templates** section to see if a pre-configured automation matches your use case.\n"
@@ -565,28 +597,21 @@ def _get_smart_conversational_response(query: str, workflow_context: Optional[di
 
     async def generate():
         try:
-            async with httpx.AsyncClient(timeout=ollama_provider.timeout_seconds, trust_env=False) as client:
-                async with client.stream("POST", f"{ollama_provider.base_url}/api/chat", json={
-                    "model": ollama_provider.model,
-                    "stream": True,
-                    "messages": messages,
-                    "options": {"temperature": 0.4},
-                }) as response:
-                    response.raise_for_status()
-                    async for line in response.aiter_lines():
-                        if not line:
-                            continue
-                        try:
-                            envelope = json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
-                        delta = envelope.get("message", {}).get("content", "")
-                        if delta:
-                            yield "data: " + json.dumps({"delta": delta}, ensure_ascii=False) + "\n\n"
-                        if envelope.get("done"):
-                            break
+            streamed = False
+            async for delta in ai_router.stream_text(messages, temperature=0.4, provider=req.provider):
+                streamed = True
+                if delta:
+                    yield "data: " + json.dumps({"delta": delta}, ensure_ascii=False) + "\n\n"
+            if not streamed:
+                fallback_text = _get_smart_conversational_response(message, workflow_context)
+                for word in fallback_text.split(" "):
+                    yield "data: " + json.dumps({"delta": word + " "}, ensure_ascii=False) + "\n\n"
             yield "data: [DONE]\n\n"
-        except (httpx.HTTPError, OSError):
+        except (httpx.HTTPError, OSError, RuntimeError, ValueError) as exc:
+            if req.provider:
+                yield "data: " + json.dumps({"error": str(exc)}, ensure_ascii=False) + "\n\n"
+                yield "data: [DONE]\n\n"
+                return
             # Resilient fallback: stream structured assistant response when local LLM server is offline
             fallback_text = _get_smart_conversational_response(message, workflow_context)
             words = fallback_text.split(" ")
@@ -684,6 +709,171 @@ async def propose_observation_plan(req: ObservationPlanRequest):
 
 @app.post("/api/ai/goal")
 async def propose_goal_plan(req: GoalPlanRequest):
+    from .capabilities.task_understanding import understand_task
+    from .capabilities.router import capability_router, RoutingDecisionType
+
+    # 1. Evaluate via Capability Router
+    from .ag_ui.models import (
+        AgUiStatusEvent,
+        AgUiCapabilityResultEvent,
+        AgUiPlanEvent,
+        AgUiInputRequestEvent,
+        AgUiApprovalRequestEvent,
+        AgUiStepUpdateEvent,
+        AgUiVerificationEvent,
+        AgUiResultEvent,
+        AgUiErrorEvent,
+    )
+
+    try:
+        if req.provider:
+            task_rep = await understand_task(req.goal, ai_provider=ai_router.get_provider(req.provider))
+        else:
+            task_rep = await understand_task(req.goal)
+        routing = await capability_router.route(task_rep)
+
+        if routing.decision == RoutingDecisionType.UNSUPPORTED:
+            events = [
+                AgUiStatusEvent(run_id="goal_eval", phase="routing", message="Evaluating task capabilities").model_dump(),
+                AgUiCapabilityResultEvent(
+                    run_id="goal_eval",
+                    outcome="UNSUPPORTED",
+                    severity="red",
+                    reason=routing.reason,
+                    surface=routing.surface,
+                ).model_dump(),
+                AgUiErrorEvent(
+                    run_id="goal_eval",
+                    error_code="UNSUPPORTED_TASK",
+                    message=routing.reason,
+                    recovery_suggestion="Try breaking down the task into supported browser interactions or check installed integrations.",
+                    is_success=False,
+                ).model_dump(),
+            ]
+            return {
+                "status": "unsupported",
+                "message": routing.reason,
+                "routing": routing.model_dump(),
+                "events": events,
+            }
+
+        if routing.decision == RoutingDecisionType.CLARIFY_SURFACE:
+            question = ClarificationQuestion(
+                id="clarify_surface",
+                step_id="environment",
+                question="Which environment should this automation run on?",
+                explanation=routing.reason,
+                options=routing.clarification_options
+            )
+            events = [
+                AgUiStatusEvent(run_id="goal_eval", phase="routing", message="Ambiguous target surface").model_dump(),
+                AgUiCapabilityResultEvent(
+                    run_id="goal_eval",
+                    outcome="CLARIFY_SURFACE",
+                    severity="amber",
+                    reason=routing.reason,
+                    surface="unknown",
+                ).model_dump(),
+                AgUiInputRequestEvent(
+                    run_id="goal_eval",
+                    request_id="clarify_surface",
+                    kind="surface_choice",
+                    question="Which environment should this automation run on?",
+                    explanation=routing.reason,
+                    options=routing.clarification_options,
+                    surface_options=[
+                        {"surface": "browser", "label": "Web Browser", "description": "Automate a website or web application", "available": True},
+                        {"surface": "desktop", "label": "Desktop Application", "description": "Native OS / Windows software (Desktop driver currently unavailable)", "available": False}
+                    ]
+                ).model_dump(),
+            ]
+            return {
+                "status": "clarification_needed",
+                "message": routing.reason,
+                "clarifications": [question.model_dump()],
+                "routing": routing.model_dump(),
+                "events": events,
+            }
+
+        if routing.decision == RoutingDecisionType.NEEDS_RECORDING:
+            events = [
+                AgUiStatusEvent(run_id="goal_eval", phase="routing", message="No existing skill found; demonstration recording needed").model_dump(),
+                AgUiCapabilityResultEvent(
+                    run_id="goal_eval",
+                    outcome="NEEDS_RECORDING",
+                    severity="amber",
+                    reason=routing.reason,
+                    surface=routing.surface or "browser",
+                    surface_confidence=task_rep.surface_confidence,
+                    target_hints=task_rep.target_hints.model_dump()
+                ).model_dump(),
+            ]
+            return {
+                "status": "needs_recording",
+                "message": routing.reason,
+                "surface": routing.surface or "browser",
+                "routing": routing.model_dump(),
+                "action_prompt": f"Record {routing.surface} task",
+                "target_hints": task_rep.target_hints.model_dump(),
+                "events": events,
+            }
+
+        if routing.decision == RoutingDecisionType.EXISTING_WORKFLOW and routing.matched_workflow:
+            wf = WorkflowDefinition.model_validate(routing.matched_workflow)
+            events = [
+                AgUiStatusEvent(run_id="goal_eval", phase="routing", message=f"Matched saved skill '{wf.title}'").model_dump(),
+                AgUiCapabilityResultEvent(
+                    run_id="goal_eval",
+                    outcome="EXISTING_WORKFLOW",
+                    severity="green",
+                    reason=routing.reason,
+                    matched_workflow_id=wf.workflow_id
+                ).model_dump(),
+                AgUiPlanEvent(
+                    run_id="goal_eval",
+                    workflow_id=wf.workflow_id,
+                    title=wf.title,
+                    summary=wf.intent,
+                    steps=[s.model_dump() for s in wf.steps],
+                    allowed_origins=wf.allowed_origins,
+                    risk="low",
+                    sensitive_step_ids=[s.id for s in wf.steps if s.requires_confirmation],
+                    content_hash=wf.content_hash,
+                    version=wf.version
+                ).model_dump(),
+            ]
+            return {
+                "status": "existing_workflow",
+                "workflow": wf,
+                "message": routing.reason,
+                "routing": routing.model_dump(),
+                "summary": f"Found existing saved workflow '{wf.title}'.",
+                "events": events,
+            }
+
+        if routing.decision == RoutingDecisionType.MISSING_INTEGRATION:
+            events = [
+                AgUiStatusEvent(run_id="goal_eval", phase="routing", message=f"Required integration '{routing.missing_integration_id}' is not connected").model_dump(),
+                AgUiCapabilityResultEvent(
+                    run_id="goal_eval",
+                    outcome="MISSING_INTEGRATION",
+                    severity="amber",
+                    reason=routing.reason,
+                    missing_integration_id=routing.missing_integration_id
+                ).model_dump(),
+            ]
+            return {
+                "status": "missing_integration",
+                "message": routing.reason,
+                "missing_integration": routing.missing_integration_id,
+                "routing": routing.model_dump(),
+                "events": events,
+            }
+
+    except Exception as e:
+        logger.warning(f"Task routing fallback to direct synthesis: {e}")
+
+    # 2. Fallback to AI Goal Planner
     try:
         proposal = await ollama_provider.generate_goal_plan(req.goal)
     except (MalformedOutputError, WorkflowProviderUnavailableError):
@@ -695,11 +885,22 @@ async def propose_goal_plan(req: GoalPlanRequest):
             explanation="A reliable draft needs the exact page controls. Recording captures your steps so you can review and approve them.",
             options=[],
         )
+        events = [
+            AgUiStatusEvent(run_id="goal_eval", phase="routing", message="Direct synthesis uncertain; demonstration recommended").model_dump(),
+            AgUiCapabilityResultEvent(
+                run_id="goal_eval",
+                outcome="NEEDS_RECORDING",
+                severity="amber",
+                reason="Exact website actions could not be verified automatically.",
+                surface="browser",
+            ).model_dump(),
+        ]
         return {
             "status": "clarification_needed",
             "message": "I couldn’t prepare a reliable draft from this request. Nothing has run. Record the real steps to continue.",
             "clarifications": [question.model_dump()],
             "uncertainty_flags": ["No workflow was created because the exact website actions were not verified."],
+            "events": events,
         }
     except WorkflowGenerationError as exc:
         raise HTTPException(status_code=503, detail=str(exc) if isinstance(exc, WorkflowProviderUnavailableError)
@@ -718,11 +919,35 @@ async def propose_goal_plan(req: GoalPlanRequest):
     )
     risks = [step.risk for step in workflow.steps if step.enabled]
     risk = "critical" if "critical" in risks else "high" if "high" in risks else "medium" if "medium" in risks else "low"
+    sensitive_step_ids = [s.id for s in workflow.steps if s.requires_confirmation or s.risk in ("high", "critical")]
+    events = [
+        AgUiStatusEvent(run_id="goal_eval", phase="ready", message="Action plan synthesized and ready for approval").model_dump(),
+        AgUiCapabilityResultEvent(
+            run_id="goal_eval",
+            outcome="COMPOSABLE_PLAN",
+            severity="green",
+            reason="Synthesized action plan matching task representation.",
+            surface="browser"
+        ).model_dump(),
+        AgUiPlanEvent(
+            run_id="goal_eval",
+            workflow_id=workflow.workflow_id,
+            title=workflow.title,
+            summary=workflow.intent or "Synthesized workflow plan",
+            steps=[s.model_dump() for s in workflow.steps],
+            allowed_origins=workflow.allowed_origins,
+            risk=risk,
+            sensitive_step_ids=sensitive_step_ids,
+            content_hash=workflow.content_hash,
+            version=workflow.version
+        ).model_dump(),
+    ]
     return {
         "workflow": workflow,
         "uncertainty_flags": proposal.uncertainty_flags,
         "risk": risk,
         "summary": "Review all targets, arguments, actions, and allowed websites before approving.",
+        "events": events,
     }
 
 
@@ -1016,6 +1241,62 @@ async def revoke_approval(approval_id: str):
         ref_ids={"approval_id": approval_id}
     )
     return {"status": "revoked"}
+
+
+@app.get("/api/approvals")
+async def list_approvals(workflow_id: Optional[str] = None):
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        if workflow_id:
+            cursor.execute("SELECT * FROM approvals WHERE workflow_id = ? ORDER BY granted_at DESC", (workflow_id,))
+        else:
+            cursor.execute("SELECT * FROM approvals ORDER BY granted_at DESC LIMIT 50")
+        rows = cursor.fetchall()
+        approvals = []
+        for r in rows:
+            approvals.append({
+                "id": r["id"],
+                "workflow_id": r["workflow_id"],
+                "version": r["version"],
+                "version_hash": r["version_hash"],
+                "allowed_origins": json.loads(r["allowed_origins_json"]) if r["allowed_origins_json"] else [],
+                "allowed_parameters": json.loads(r["allowed_parameters_json"]) if r["allowed_parameters_json"] else [],
+                "granted_at": r["granted_at"],
+                "expires_at": r["expires_at"],
+                "revoked": bool(r["revoked"]),
+                "revoked_at": r["revoked_at"],
+            })
+        return {"approvals": approvals}
+    finally:
+        conn.close()
+
+
+@app.get("/api/approvals/{approval_id}")
+async def get_approval(approval_id: str):
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM approvals WHERE id = ?", (approval_id,))
+        r = cursor.fetchone()
+        if not r:
+            raise HTTPException(status_code=404, detail="Approval record not found")
+        return {
+            "approval": {
+                "id": r["id"],
+                "workflow_id": r["workflow_id"],
+                "version": r["version"],
+                "version_hash": r["version_hash"],
+                "allowed_origins": json.loads(r["allowed_origins_json"]) if r["allowed_origins_json"] else [],
+                "allowed_parameters": json.loads(r["allowed_parameters_json"]) if r["allowed_parameters_json"] else [],
+                "granted_at": r["granted_at"],
+                "expires_at": r["expires_at"],
+                "revoked": bool(r["revoked"]),
+                "revoked_at": r["revoked_at"],
+            }
+        }
+    finally:
+        conn.close()
 
 
 # 6. EXECUTION ENDPOINTS (EXE-1..12 & TST-1..4)
@@ -1321,6 +1602,25 @@ async def undo_paper_organization(req: UndoOrganizeRequest):
 
 
 # 9. AG-UI (AGENT-USER INTERACTION) PROTOCOL & DAILY LOG RECORDING
+class AgUiChatEventsRequest(BaseModel):
+    goal: str
+    thread_id: Optional[str] = None
+
+
+@app.post("/api/ag-ui/chat-events")
+async def get_ag_ui_chat_events(req: AgUiChatEventsRequest):
+    """
+    Returns typed AG-UI events for chat interactions:
+    status, capability_result, plan, input_request, approval_request, step_update, verification, result, error.
+    """
+    plan_res = await propose_goal_plan(GoalPlanRequest(goal=req.goal))
+    return {
+        "status": plan_res.get("status", "ok"),
+        "events": plan_res.get("events", []),
+        "raw_response": plan_res,
+    }
+
+
 class AgUiRunRequest(BaseModel):
     workflow: WorkflowDefinition
     parameters: Dict[str, Any] = Field(default_factory=dict)
@@ -1490,17 +1790,41 @@ async def get_agent(agent_id: str):
 async def activate_agent(agent_id: str):
     """
     Explicit user confirmation to activate an AI Agent from DRAFT or PAUSED status.
-    Guarantees agents are not silently auto-activated without review.
+    Guarantees agents are not silently auto-activated without passing validation.
     """
-    updated = AgentRepository.set_agent_status(agent_id, AgentStatus.ACTIVE)
-    if not updated:
+    agent = AgentRepository.get_agent(agent_id)
+    if not agent:
         raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found.")
+
+    # Validation: Agent must have a name, model, and instructions or workflow plan
+    if not agent.name or len(agent.name.strip()) < 2:
+        raise HTTPException(status_code=400, detail="Agent name is required and must be at least 2 characters.")
+    if not agent.instructions.strip() and not agent.workflow_plan:
+        raise HTTPException(status_code=400, detail="Agent must contain either system instructions or an executable workflow plan before activation.")
+    if not agent.model:
+        raise HTTPException(status_code=400, detail="A valid AI provider model must be configured for the agent.")
+
+    updated = AgentRepository.set_agent_status(agent_id, AgentStatus.ACTIVE)
     AuditLogger.log_event(
         actor="user",
         event_type="AGENT_ACTIVATED",
         details={"agent_id": agent_id, "name": updated.name}
     )
     return {"status": "active", "agent": updated}
+
+
+@app.post("/api/agents/{agent_id}/duplicate")
+async def duplicate_agent(agent_id: str):
+    """Duplicates an existing AI Agent as a new DRAFT agent."""
+    duplicated = AgentRepository.duplicate_agent(agent_id)
+    if not duplicated:
+        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found.")
+    AuditLogger.log_event(
+        actor="user",
+        event_type="AGENT_DUPLICATED",
+        details={"source_id": agent_id, "new_id": duplicated.id, "name": duplicated.name}
+    )
+    return {"status": "duplicated", "agent": duplicated}
 
 
 @app.post("/api/agents/{agent_id}/pause")
@@ -1518,17 +1842,28 @@ async def pause_agent(agent_id: str):
 
 
 @app.delete("/api/agents/{agent_id}")
-async def archive_agent(agent_id: str):
-    """Archives an AI Agent."""
-    updated = AgentRepository.set_agent_status(agent_id, AgentStatus.ARCHIVED)
-    if not updated:
-        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found.")
-    AuditLogger.log_event(
-        actor="user",
-        event_type="AGENT_ARCHIVED",
-        details={"agent_id": agent_id, "name": updated.name}
-    )
-    return {"status": "archived", "agent": updated}
+async def archive_or_delete_agent(agent_id: str, permanent: bool = False):
+    """Archives or permanently deletes an AI Agent."""
+    if permanent:
+        deleted = AgentRepository.delete_agent(agent_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found.")
+        AuditLogger.log_event(
+            actor="user",
+            event_type="AGENT_DELETED",
+            details={"agent_id": agent_id}
+        )
+        return {"status": "deleted", "agent_id": agent_id}
+    else:
+        updated = AgentRepository.set_agent_status(agent_id, AgentStatus.ARCHIVED)
+        if not updated:
+            raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found.")
+        AuditLogger.log_event(
+            actor="user",
+            event_type="AGENT_ARCHIVED",
+            details={"agent_id": agent_id, "name": updated.name}
+        )
+        return {"status": "archived", "agent": updated}
 
 
 # ============================================================================
@@ -1728,6 +2063,29 @@ async def connect_integration(integ_id: str, req: ConnectIntegrationRequest):
     return {"status": updated.status.value, "integration": updated.model_dump()}
 
 
+@app.post("/api/integrations/{integ_id}/oauth/start")
+async def start_integration_oauth(integ_id: str):
+    try:
+        authorization_url = IntegrationHubService.create_oauth_authorization(integ_id)
+    except IntegrationConfigError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    return {"integration_id": integ_id, "authorization_url": authorization_url}
+
+
+@app.get("/api/integrations/oauth/callback")
+async def complete_integration_oauth(code: str, state: str, error: Optional[str] = None):
+    if error:
+        return HTMLResponse(f"<h1>Sign-in cancelled</h1><p>{error}</p><p>You can close this window.</p>", status_code=400)
+    try:
+        integration = await IntegrationHubService.complete_oauth(code, state)
+    except IntegrationConfigError as exc:
+        return HTMLResponse(f"<h1>Connection failed</h1><p>{str(exc)}</p>", status_code=exc.status_code)
+    return HTMLResponse(
+        "<h1>Connection complete</h1><p>You can close this window and return to WhistleCode.</p>"
+        "<script>window.opener?.postMessage({type:'whistlecode-integration-connected'}, window.location.origin); window.close();</script>"
+    )
+
+
 @app.post("/api/integrations/{integ_id}/disconnect")
 async def disconnect_integration(integ_id: str):
     updated = IntegrationHubService.disconnect_integration(integ_id)
@@ -1774,7 +2132,7 @@ async def run_registered_tool(tool_id: str, req: ExecuteToolRequest):
             detail=f"{spec.name} stays disabled until {spec.integration_id} is connected.",
         )
     try:
-        result = execute_tool(tool_id, req.arguments, req.granted_permissions)
+        result = await execute_tool(tool_id, req.arguments, req.granted_permissions)
     except ToolPermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except KeyError:
@@ -1937,12 +2295,15 @@ async def get_activity_dashboard():
             "details": json.loads(a["details_json"]) if a["details_json"] else {}
         })
 
-    completed_count = sum(1 for r in run_list if r["state"] == "COMPLETED")
-    failed_count = sum(1 for r in run_list if r["state"] in ["FAILED", "STOPPED"])
-    running_count = sum(1 for r in run_list if r["state"] == "RUNNING")
-    
-    # Check live AG-UI engine tasks if running
-    ag_ui_tasks = [t.model_dump() for t in ag_ui_engine_instance.live_tasks.values()]
+    completed_count = sum(1 for r in run_list if r["state"] in {"COMPLETED", "SUCCESS"})
+    failed_count = sum(1 for r in run_list if r["state"] in {"FAILED", "STOPPED", "UNCERTAIN"})
+    running_count = sum(1 for r in run_list if r["state"] in {
+        "RUNNING", "EXECUTING_STEP", "PRECHECK", "PENDING_CONFIRMATION"
+    })
+
+    # Live tasks are managed by the run state machine and may not exist in the
+    # database until a run starts. The dashboard remains database-backed.
+    ag_ui_tasks: List[Dict[str, Any]] = []
 
     return {
         "summary": {
@@ -1964,4 +2325,70 @@ async def get_activity_dashboard():
     }
 
 
+# ============================================================================
+# CAPABILITY REGISTRY & TASK UNDERSTANDING APIS (Step 3)
+# ============================================================================
 
+@app.get("/api/capabilities")
+async def list_capabilities(surface: Optional[str] = None):
+    """
+    Returns all registered capabilities (skills, tools, saved workflows, and drivers)
+    with their live health and operational status.
+    """
+    from .capabilities.registry import capability_registry
+    caps = await capability_registry.auto_register_all()
+    if surface:
+        caps = [c for c in caps if c.surface.lower() == surface.lower()]
+    return {
+        "capabilities": [c.model_dump() for c in caps],
+        "count": len(caps)
+    }
+
+
+class TaskUnderstandRequest(BaseModel):
+    prompt: str
+
+
+@app.post("/api/capabilities/understand")
+async def understand_task_endpoint(req: TaskUnderstandRequest):
+    """
+    Analyzes an automation prompt and returns a validated TaskRepresentation.
+    """
+    from .capabilities.task_understanding import understand_task
+    try:
+        task_rep = await understand_task(req.prompt)
+        return {"task": task_rep.model_dump()}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+class RouteTaskRequest(BaseModel):
+    prompt: Optional[str] = None
+    task: Optional[Dict[str, Any]] = None
+
+
+@app.post("/api/capabilities/route")
+async def route_task_endpoint(req: RouteTaskRequest):
+    """
+    Evaluates a prompt or TaskRepresentation through the Capability Router (Step 4).
+    Returns one of: EXISTING_WORKFLOW, COMPOSABLE_PLAN, MISSING_INTEGRATION,
+    NEEDS_RECORDING, CLARIFY_SURFACE, UNSUPPORTED.
+    """
+    from .capabilities.models import TaskRepresentation
+    from .capabilities.task_understanding import understand_task
+    from .capabilities.router import capability_router
+
+    task_rep: Optional[TaskRepresentation] = None
+    if req.task:
+        task_rep = TaskRepresentation.model_validate(req.task)
+    elif req.prompt:
+        task_rep = await understand_task(req.prompt)
+
+    if not task_rep:
+        raise HTTPException(status_code=400, detail="Must provide either 'prompt' or 'task'.")
+
+    routing = await capability_router.route(task_rep)
+    return {
+        "task": task_rep.model_dump(),
+        "routing": routing.model_dump()
+    }

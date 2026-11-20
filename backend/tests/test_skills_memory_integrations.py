@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 import pytest
 from app.db.database import init_db
@@ -85,6 +86,62 @@ def test_integrations_and_mcp_hub():
     assert len(mcp.available_tools) >= 2
     browser = next(i for i in integrations if i.id == "integ_browser")
     assert browser.id == "integ_browser"
+
+
+def test_integration_credential_vault_precedence_and_masking(monkeypatch):
+    """Verifies server-side credential vault storage, masking, and precedence over .env."""
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_env_variable_token_9999")
+
+    # 1. Check env inheritance
+    groq = IntegrationHubService.get_integration("integ_groq")
+    assert groq is not None
+    assert groq.has_credentials is True
+    assert groq.credential_source == "env"
+    assert groq.masked_credential == "gsk_••••9999"
+    assert "gsk_env_variable_token_9999" not in json.dumps(groq.model_dump())
+
+    # 2. UI Vault key overrides .env
+    IntegrationHubService.connect_integration("integ_groq", {"api_key": "gsk_vault_key_override_1111"})
+    groq_vault = IntegrationHubService.get_integration("integ_groq")
+    assert groq_vault is not None
+    assert groq_vault.credential_source == "vault"
+    assert groq_vault.masked_credential == "gsk_••••1111"
+    assert "gsk_vault_key_override_1111" not in json.dumps(groq_vault.model_dump())
+
+    # 3. Disconnect removes vault key and reverts to env
+    IntegrationHubService.disconnect_integration("integ_groq")
+    groq_reverted = IntegrationHubService.get_integration("integ_groq")
+    assert groq_reverted is not None
+    assert groq_reverted.credential_source == "env"
+    assert groq_reverted.masked_credential == "gsk_••••9999"
+
+
+@pytest.mark.asyncio
+async def test_ai_router_ordered_fallback_chain(monkeypatch):
+    """Verifies ordered fallback chain: Gemini -> Groq -> OpenRouter -> Ollama."""
+    from backend.app.integrations.ai_providers import AIProviderRouter, OpenRouterProvider
+
+    # Clear all keys
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    router = AIProviderRouter()
+    # No keys -> active provider falls back to Ollama
+    assert router.get_active_provider().name == "Ollama"
+
+    # Set OpenRouter -> picks OpenRouter
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test-key-1234")
+    assert router.get_active_provider().name == "OpenRouter"
+
+    # Set Groq -> picks Groq before OpenRouter
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_test_key_5678")
+    assert router.get_active_provider().name == "Groq"
+
+    # Set Gemini -> picks Gemini before Groq
+    monkeypatch.setenv("GEMINI_API_KEY", "AIza_test_key_9012")
+    assert router.get_active_provider().name == "Google Gemini"
 
 
 def test_automations_scheduling_and_trigger():

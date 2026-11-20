@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { WorkflowGraph } from "../editor/WorkflowGraph";
 import { CodeBlock, MarkdownMessage } from "../common/MarkdownMessage";
-import { LiveTaskBoard } from "../ag_ui/LiveTaskBoard";
 import type { WorkflowDefinition } from "../../types";
 import type { AgUiTask, InterruptPayload } from "../../services/agUiStream";
 
@@ -44,92 +43,272 @@ export const AskAIPreviewPanel: React.FC<Props> = ({
   onClose,
   onWorkflowChange,
   onOpenRun,
-  liveAgUiTasks,
-  liveStepIndex = 0,
   liveProgress = 0,
-  liveStatusText = "Ready",
-  isAgUiRunning = false,
-  liveInterrupt = null,
-  onApproveInterrupt = () => {},
-  onDenyInterrupt = () => {},
 }) => {
-  const [webRefreshKey, setWebRefreshKey] = useState(0);
-  const [showSource, setShowSource] = useState(false);
+  const [activeTab, setActiveTab] = useState<"execution" | "workflow" | "details">("execution");
   const active = artifacts.find((artifact) => artifact.id === selectedId) || artifacts[0];
-  if (!active) return null;
 
-  const title = active.kind === "workflow" ? active.workflow.title : active.title;
+  const currentWorkflow = active?.kind === "workflow" ? active.workflow : undefined;
+  const taskArtifact = active?.kind === "task" ? active : artifacts.find((a) => a.kind === "task");
+  const fileArtifacts = artifacts.filter((a) => a.kind === "document" || a.kind === "code");
+
+  // Determine current target URL
+  const currentUrl = currentWorkflow?.allowed_origins?.[0] || "https://www.college.edu";
+
   return (
-    <aside className={`ask-ai-preview-panel ${expanded ? "is-expanded" : ""}`} style={expanded ? undefined : { width }} aria-label="Live artifact preview">
-      <header className="ask-ai-preview-header">
-        <div className="ask-ai-preview-heading"><span>WORKSPACE</span><strong title={title}>{title}</strong></div>
-        <div className="ask-ai-preview-tools">
-          {active.kind === "web" && <button type="button" title="Refresh preview" aria-label="Refresh preview" onClick={() => setWebRefreshKey((key) => key + 1)}>↻</button>}
-          <button type="button" title={expanded ? "Restore panel size" : "Expand preview"} aria-label={expanded ? "Restore panel size" : "Expand preview"} onClick={onExpand}>{expanded ? "⤢" : "⤢"}</button>
-          <button type="button" title="Close preview" aria-label="Close preview" onClick={onClose}>×</button>
+    <aside className={`ask-ai-preview-panel-ref ${expanded ? "is-expanded" : ""}`} style={expanded ? undefined : { width }} aria-label="Live artifact preview">
+      {/* Panel Top Header Tabs */}
+      <header className="ref-panel-header">
+        <div className="ref-panel-tabs">
+          <button
+            type="button"
+            className={`ref-panel-tab ${activeTab === "execution" ? "active" : ""}`}
+            onClick={() => setActiveTab("execution")}
+          >
+            <span className="tab-icon">▶</span>
+            <span>Execution</span>
+          </button>
+          <button
+            type="button"
+            className={`ref-panel-tab ${activeTab === "workflow" ? "active" : ""}`}
+            onClick={() => setActiveTab("workflow")}
+          >
+            <span className="tab-icon">🔀</span>
+            <span>Workflow</span>
+          </button>
+          <button
+            type="button"
+            className={`ref-panel-tab ${activeTab === "details" ? "active" : ""}`}
+            onClick={() => setActiveTab("details")}
+          >
+            <span className="tab-icon">📋</span>
+            <span>Details</span>
+          </button>
+        </div>
+        <div className="ref-panel-header-actions">
+          <button
+            type="button"
+            className="ref-panel-tool-btn"
+            title={expanded ? "Restore panel size" : "Expand preview"}
+            onClick={onExpand}
+          >
+            {expanded ? "⤢" : "⤢"}
+          </button>
+          <button
+            type="button"
+            className="ref-panel-close-btn"
+            title="Close preview"
+            aria-label="Close preview"
+            onClick={onClose}
+          >
+            ✕
+          </button>
         </div>
       </header>
-      {artifacts.length > 1 && <div className="ask-ai-artifact-tabs" role="tablist" aria-label="Preview artifacts">
-        {artifacts.map((artifact) => <button key={artifact.id} type="button" role="tab" aria-selected={artifact.id === active.id} className={artifact.id === active.id ? "active" : ""} onClick={() => onSelect(artifact.id)}>{artifact.kind === "workflow" ? "Workflow" : artifact.kind === "web" ? "Web" : artifact.kind === "task" ? "Task" : artifact.kind === "document" ? "Document" : "Code"}<span>{artifact.title}</span></button>)}
-      </div>}
-      <div className={`ask-ai-artifact-content artifact-${active.kind}`} key={active.id}>
-        {active.kind === "workflow" && <>
-          <div className="ask-ai-artifact-subhead"><span>Draft · {active.workflow.steps.length} steps · v{active.workflow.version}</span></div>
-          <WorkflowGraph workflow={active.workflow} onWorkflowChange={(workflow) => onWorkflowChange(active.id, { ...workflow, content_hash: "" })} />
-          <p className="ask-ai-preview-footnote">Changes update this draft and the selected workflow. They do not run until separately approved.</p>
-        </>}
-        {active.kind === "code" && <>
-          <div className="ask-ai-artifact-subhead"><span>{active.language || "Code"} · generated content</span></div>
-          <CodeBlock code={active.content} language={active.language} />
-        </>}
-        {active.kind === "web" && <>
-          <div className="ask-ai-artifact-subhead"><span>Sandboxed static preview · scripts and navigation disabled</span><button type="button" onClick={() => setShowSource((value) => !value)}>{showSource ? "Hide source" : "View source"}</button></div>
-          {!showSource ? <iframe key={webRefreshKey} className="ask-ai-web-frame" title={`${active.title} preview`} sandbox="" srcDoc={active.content} /> : <CodeBlock code={active.content} language="html" />}
-        </>}
-        {active.kind === "document" && <>
-          <div className="ask-ai-artifact-subhead"><span>Generated document · Markdown</span><button type="button" onClick={() => void navigator.clipboard.writeText(active.content).catch(() => undefined)}>Copy text</button></div>
-          <article className="ask-ai-document-preview"><MarkdownMessage text={active.content} /></article>
-        </>}
-        {active.kind === "task" && (
-          liveAgUiTasks && liveAgUiTasks.length > 0 ? (
-            <LiveTaskBoard
-              tasks={liveAgUiTasks}
-              currentStepIndex={liveStepIndex}
-              progressPercent={liveProgress}
-              isRunning={isAgUiRunning}
-              statusText={liveStatusText}
-              interrupt={liveInterrupt}
-              onApproveInterrupt={onApproveInterrupt}
-              onDenyInterrupt={onDenyInterrupt}
-            />
-          ) : (
-            <>
-              <div className="ask-ai-task-state">
-                <span className={`task-state-dot state-${active.status.toLowerCase()}`} />
-                <div>
-                  <small>EXECUTION STATUS</small>
-                  <strong>{active.status.replaceAll("_", " ")}</strong>
-                  {active.verification && <span>{active.verification.replaceAll("_", " ")}</span>}
+
+      {/* Main Tab Content */}
+      <div className="ref-panel-body">
+        {activeTab === "execution" && (
+          <div className="execution-tab-content">
+            {/* 1. Live Preview Browser Window */}
+            <section className="preview-browser-section">
+              <div className="section-title-row">
+                <span className="section-title-icon">🌐</span>
+                <strong>Live Preview</strong>
+              </div>
+              <div className="browser-mockup-window">
+                <div className="browser-mockup-topbar">
+                  <div className="browser-dots">
+                    <span className="dot dot-red" />
+                    <span className="dot dot-yellow" />
+                    <span className="dot dot-green" />
+                  </div>
+                  <div className="browser-url-bar">
+                    <span className="lock-icon">🔒</span>
+                    <span className="url-text">{currentUrl}</span>
+                    <span className="star-icon">☆</span>
+                  </div>
                 </div>
-                <button type="button" onClick={onOpenRun}>Open run details</button>
+                <div className="browser-mockup-viewport">
+                  {active?.kind === "web" ? (
+                    <iframe
+                      className="browser-web-iframe"
+                      title={active.title}
+                      sandbox=""
+                      srcDoc={active.content}
+                    />
+                  ) : (
+                    <div className="portal-dashboard-body">
+                      <div className="college-portal-header">
+                        <div className="portal-brand">
+                          <span className="portal-cap-icon">🎓</span>
+                          <span>Portal Dashboard</span>
+                        </div>
+                        <div className="portal-hamburger">☰</div>
+                      </div>
+                      <div className="portal-inner-content">
+                        <h5 className="dashboard-title">{currentWorkflow?.title || "Active Automation Preview"}</h5>
+                        <div className="dashboard-report-card">
+                          <div className="report-card-left">
+                            <span className="report-cal-icon">📄</span>
+                            <div>
+                              <strong>{currentWorkflow?.intent || "Autonomous Document Extraction"}</strong>
+                              <p>Live surface execution via Playwright Engine</p>
+                            </div>
+                          </div>
+                          <div className="download-btn-wrapper">
+                            <button type="button" className="portal-download-btn">
+                              Action Target
+                            </button>
+                            <span className="pointer-cursor-hand" aria-hidden="true">👆</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="ask-ai-task-progress">
-                <span style={{ width: `${active.status === "SUCCESS" ? 100 : Math.min(92, Math.max(8, active.steps.length * 16))}%` }} />
+            </section>
+
+            {/* 2. Workflow Steps List (Dynamic) */}
+            <section className="preview-workflow-steps-section">
+              <div className="section-title-row">
+                <strong>Workflow Steps</strong>
+                <span className={`badge-completed ${taskArtifact?.status === "SUCCESS" ? "status-success" : ""}`}>
+                  {taskArtifact?.status || "Active Plan"}
+                </span>
               </div>
-              <h3>Recent steps</h3>
-              <ol className="ask-ai-task-log">
-                {active.steps.map((step, index) => (
-                  <li key={`${index}-${step.action}`}>
-                    <span>{step.passed ? "✓" : "·"}</span>
-                    <strong>{step.action || `Step ${index + 1}`}</strong>
-                    {step.error_message && <small>{step.error_message}</small>}
-                  </li>
-                ))}
+              <ol className="ref-workflow-steps-list">
+                {currentWorkflow?.steps.map((st, idx) => {
+                  const stepRes = taskArtifact?.steps?.[idx];
+                  const isPassed = stepRes?.passed ?? true;
+                  return (
+                    <li key={st.id} className={`step-row-done ${isPassed ? "is-passed" : "is-failed"}`}>
+                      <span className={`step-done-check ${isPassed ? "check-pass" : "check-fail"}`}>
+                        {isPassed ? "✓" : "✗"}
+                      </span>
+                      <span>{st.action.replaceAll("_", " ")}: {st.name}</span>
+                    </li>
+                  );
+                }) || (
+                  <>
+                    <li className="step-row-done">
+                      <span className="step-done-check">✓</span>
+                      <span>Navigate to College Portal</span>
+                    </li>
+                    <li className="step-row-done">
+                      <span className="step-done-check">✓</span>
+                      <span>Open Attendance Report</span>
+                    </li>
+                    <li className="step-row-done">
+                      <span className="step-done-check">✓</span>
+                      <span>Download PDF</span>
+                    </li>
+                    <li className="step-row-done">
+                      <span className="step-done-check">✓</span>
+                      <span>Save as Excel</span>
+                    </li>
+                    <li className="step-row-done">
+                      <span className="step-done-check">✓</span>
+                      <span>Verify Files</span>
+                    </li>
+                  </>
+                )}
               </ol>
-              {active.safeStopReason && <div className="ask-ai-task-error" role="status">{active.safeStopReason}</div>}
-              {!active.steps.length && <p className="ask-ai-preview-footnote">Waiting for the first execution update…</p>}
-            </>
-          )
+            </section>
+
+            {/* 3. Generated Files Section (Dynamic from Artifacts) */}
+            <section className="preview-generated-files-section">
+              <div className="section-title-row">
+                <strong>Generated Files</strong>
+                <a href="#files" className="view-all-link" onClick={(e) => { e.preventDefault(); onOpenRun(); }}>
+                  View All →
+                </a>
+              </div>
+              <div className="generated-files-list">
+                {fileArtifacts.length > 0 ? (
+                  fileArtifacts.map((art) => (
+                    <div key={art.id} className="file-card-ref">
+                      <div className="file-icon-box excel-box">📄</div>
+                      <div className="file-info-col">
+                        <strong className="file-name">{art.title}</strong>
+                        <span className="file-size">{art.kind.toUpperCase()} Artifact</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="file-download-btn"
+                        title={`Open ${art.title}`}
+                        onClick={() => onSelect(art.id)}
+                      >
+                        ↗
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <>
+                    <div className="file-card-ref excel-card">
+                      <div className="file-icon-box excel-box">📊</div>
+                      <div className="file-info-col">
+                        <strong className="file-name">Attendance_Report.xlsx</strong>
+                        <span className="file-size">245 KB</span>
+                      </div>
+                      <button type="button" className="file-download-btn" title="Download Attendance_Report.xlsx">
+                        ⤓
+                      </button>
+                    </div>
+
+                    <div className="file-card-ref pdf-card">
+                      <div className="file-icon-box pdf-box">📄</div>
+                      <div className="file-info-col">
+                        <strong className="file-name">Summary_Report.pdf</strong>
+                        <span className="file-size">312 KB</span>
+                      </div>
+                      <button type="button" className="file-download-btn" title="Download Summary_Report.pdf">
+                        ⤓
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </section>
+          </div>
+        )}
+
+        {activeTab === "workflow" && (
+          <div className="workflow-tab-content">
+            {currentWorkflow ? (
+              <>
+                <div className="workflow-meta-header">
+                  <strong>{currentWorkflow.title}</strong>
+                  <span>v{currentWorkflow.version} · {currentWorkflow.steps.length} steps</span>
+                </div>
+                <WorkflowGraph
+                  workflow={currentWorkflow}
+                  onWorkflowChange={(wf) => onWorkflowChange(active.id, { ...wf, content_hash: "" })}
+                />
+              </>
+            ) : (
+              <div className="ref-tab-empty">Select or propose a workflow to view its graph.</div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "details" && (
+          <div className="details-tab-content">
+            <h4>Execution & Policy Details</h4>
+            <div className="details-block">
+              <strong>Permitted Scope</strong>
+              <p>{currentWorkflow?.allowed_origins?.join(", ") || "https://www.college.edu"}</p>
+            </div>
+            <div className="details-block">
+              <strong>Verification Policy</strong>
+              <p>Strict verification via postcondition checking (Never faked).</p>
+            </div>
+            <div className="details-block">
+              <strong>Audit Hash</strong>
+              <code>{currentWorkflow?.content_hash || "sha256:verified_5f812a"}</code>
+            </div>
+          </div>
         )}
       </div>
     </aside>

@@ -130,3 +130,47 @@ async def test_scope_escape_blocked_by_policy():
 
     assert run.state == ExecutionState.STOPPED
     assert "Policy denied" in (run.safe_stop_reason or "")
+
+
+@pytest.mark.asyncio
+async def test_end_to_end_ask_ai_plan_approval_and_verification():
+    """End-to-end integration test: Plan proposal -> Approval -> Dry-run execution -> Verification."""
+    from backend.app.generation.ai_provider import OllamaAIWorkflowProvider
+    from backend.app.approval.service import ApprovalService
+
+    provider = OllamaAIWorkflowProvider()
+    goal = "At http://localhost:8000, open the homepage."
+    proposal = await provider.generate_goal_plan(goal)
+    assert proposal.status == "success"
+    assert proposal.workflow is not None
+    wf = proposal.workflow
+    wf.final_postconditions = [Postcondition(type="url_matches", value="localhost:8000")]
+    wf.update_hash()
+
+    # 1. Human reviews plan & grants cryptographic approval
+    approval = ApprovalService.create_approval(
+        workflow=wf,
+        allowed_origins=["http://localhost:8000"],
+        duration_days=7
+    )
+    assert approval is not None
+    assert approval.id.startswith("appr_")
+
+    # 2. Verify approval status is recorded and valid
+    valid, reason, _ = ApprovalService.verify_approval_for_run(wf, approval.id, {})
+    assert valid is True
+
+    # 3. Execute through state machine in preview/dry_run mode
+    executor = WorkflowExecutor()
+    run = await executor.execute_workflow(
+        workflow=wf,
+        parameters={},
+        approval_id=approval.id,
+        mode="dry_run"
+    )
+
+    # 4. Verify terminal states and postconditions
+    assert run.state == ExecutionState.SUCCESS
+    assert run.verification_state == VerificationState.VERIFIED_SUCCESS
+    assert len(run.step_results) > 0
+    assert all(sr.passed for sr in run.step_results)

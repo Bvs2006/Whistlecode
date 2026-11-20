@@ -1,21 +1,21 @@
 import re
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List, Any, Union, Dict
 from playwright.async_api import Page, Locator
-from ..models.workflow import TargetDescriptor
+from ..models.workflow import TargetDescriptor, TargetCandidate, TargetContext
 
 
 class TargetResolver:
     """
     Resolves targets using strict ordered strategies (EXE-3):
     test_id -> role + name -> label -> text -> css_fallback.
-    Fails safe when ambiguous (multiple matches exist) or not found.
+    Supports ranked TargetCandidate lists and fails safe when ambiguous or not found.
     """
 
     @staticmethod
     def _normalized_name_pattern(value: Optional[str]):
-        if not value or not value.strip():
+        if not value or not str(value).strip():
             return None
-        words = [re.escape(word) for word in re.split(r"\s+", value.strip()) if word]
+        words = [re.escape(word) for word in re.split(r"\s+", str(value).strip()) if word]
         return re.compile(r"^\s*" + r"\s+".join(words) + r"\s*$", re.IGNORECASE)
 
     @staticmethod
@@ -47,89 +47,147 @@ class TargetResolver:
         return re.sub(r"\.(?:active|selected|hover|focus)(?=\.|#|\[|\s|>|$)", "", selector)
 
     @classmethod
-    async def resolve(cls, page: Page, target: TargetDescriptor) -> Tuple[Optional[Locator], Optional[str]]:
-        if not target:
-            return None, "No target descriptor provided"
+    async def resolve_candidate(
+        cls,
+        page: Page,
+        candidate: TargetCandidate,
+        scopes: List[Any]
+    ) -> Tuple[Optional[Locator], Optional[str]]:
+        """Resolves a single TargetCandidate against page/scopes."""
+        strat = candidate.strategy.lower()
+        val = candidate.value
 
-        ambiguous = []
-        name_pattern = cls._normalized_name_pattern(target.name or target.text)
-
-        # Search in the recorded landmark/form first, then the full page.
-        scopes = []
-        if target.context and target.context.within:
-            try:
-                context = page.locator(target.context.within)
-                if await context.count() == 1:
-                    scopes.append(context)
-            except Exception:
-                pass
-        scopes.append(page)
-
-        # Strategy 1: test_id
-        if target.test_id:
-            loc = page.locator(f"[data-testid='{target.test_id}'], [data-test='{target.test_id}'], #{target.test_id}")
+        if strat == "test_id":
+            test_id = str(val)
+            loc = page.locator(f"[data-testid='{test_id}'], [data-test='{test_id}'], #{test_id}")
             found, count = await cls._unique_visible(loc)
             if found:
                 return found, None
             if count > 1:
-                ambiguous.append(f"test_id='{target.test_id}' matched {count} visible elements")
+                return None, f"test_id='{test_id}' matched {count} visible elements"
 
-        # Strategy 2: role + normalized accessible name. Whitespace and line
-        # breaks from captured link text are normalized without fuzzy matching.
-        if target.role and target.name:
+        elif strat in ("role_name", "role"):
+            role = ""
+            name = ""
+            if isinstance(val, dict):
+                role = val.get("role", "")
+                name = val.get("name", "")
+            elif isinstance(val, str):
+                name = val
+            name_pattern = cls._normalized_name_pattern(name)
             for scope in scopes:
                 try:
-                    loc = scope.get_by_role(target.role, name=name_pattern or target.name, exact=True)
+                    if role:
+                        loc = scope.get_by_role(role, name=name_pattern or name, exact=True)
+                    else:
+                        loc = scope.get_by_role("button", name=name_pattern or name, exact=True)
                     found, count = await cls._unique_visible(loc, wait_ms=1800)
                     if found:
                         return found, None
                     if count > 1:
-                        ambiguous.append(f"role='{target.role}' name='{target.name}' matched {count} visible elements")
+                        return None, f"role='{role}' name='{name}' matched {count} visible elements"
                 except Exception:
                     continue
 
-        # Strategy 3: label
-        if target.label:
+        elif strat == "label":
+            label_val = str(val)
             for scope in scopes:
                 try:
-                    loc = scope.get_by_label(target.label, exact=False)
+                    loc = scope.get_by_label(label_val, exact=False)
                     found, count = await cls._unique_visible(loc)
                     if found:
                         return found, None
                     if count > 1:
-                        ambiguous.append(f"label='{target.label}' matched {count} visible elements")
+                        return None, f"label='{label_val}' matched {count} visible elements"
                 except Exception:
                     continue
 
-        # Strategy 4: text
-        if target.text:
+        elif strat == "text":
+            text_val = str(val)
+            name_pattern = cls._normalized_name_pattern(text_val)
             for scope in scopes:
                 try:
-                    loc = scope.get_by_text(name_pattern or target.text, exact=bool(name_pattern))
+                    loc = scope.get_by_text(name_pattern or text_val, exact=bool(name_pattern))
                     found, count = await cls._unique_visible(loc, wait_ms=1200)
                     if found:
                         return found, None
                     if count > 1:
-                        ambiguous.append(f"text='{target.text}' matched {count} visible elements")
+                        return None, f"text='{text_val}' matched {count} visible elements"
                 except Exception:
                     continue
 
-        # Strategy 5: CSS Fallback
-        if target.css_fallback:
-            stable_selector = cls._stable_css(target.css_fallback)
-            for selector in dict.fromkeys((target.css_fallback, stable_selector)):
+        elif strat in ("css", "css_fallback", "selector"):
+            css_val = str(val)
+            stable_selector = cls._stable_css(css_val)
+            for selector in dict.fromkeys((css_val, stable_selector)):
                 try:
                     loc = page.locator(selector)
-                    if name_pattern:
-                        loc = loc.filter(has_text=name_pattern)
                     found, count = await cls._unique_visible(loc, wait_ms=800)
                     if found:
                         return found, None
                     if count > 1:
-                        ambiguous.append(f"css_fallback='{selector}' matched {count} visible elements")
+                        return None, f"css='{selector}' matched {count} visible elements"
                 except Exception:
                     continue
 
+        elif strat == "xpath":
+            try:
+                loc = page.locator(f"xpath={str(val)}")
+                found, count = await cls._unique_visible(loc, wait_ms=800)
+                if found:
+                    return found, None
+                if count > 1:
+                    return None, f"xpath='{val}' matched {count} visible elements"
+            except Exception:
+                pass
+
+        return None, None
+
+    @classmethod
+    async def resolve_candidates(
+        cls,
+        page: Page,
+        candidates: List[TargetCandidate],
+        context: Optional[TargetContext] = None
+    ) -> Tuple[Optional[Locator], Optional[str], Optional[TargetCandidate]]:
+        """
+        Attempts to resolve targets using a ranked list of candidates.
+        Tries them in order and returns the locator and winning candidate.
+        """
+        if not candidates:
+            return None, "No target candidates provided", None
+
+        # Build context scopes
+        scopes = []
+        if context and context.within:
+            try:
+                ctx_loc = page.locator(context.within)
+                if await ctx_loc.count() == 1:
+                    scopes.append(ctx_loc)
+            except Exception:
+                pass
+        scopes.append(page)
+
+        ambiguous = []
+        sorted_candidates = sorted(candidates, key=lambda c: c.confidence, reverse=True)
+
+        for candidate in sorted_candidates:
+            found, err = await cls.resolve_candidate(page, candidate, scopes)
+            if found:
+                candidate.matched = True
+                return found, None, candidate
+            if err and "matched" in err:
+                ambiguous.append(err)
+
         if ambiguous:
-            return None, "Target matches multiple visible elements; refusing an ambiguous action: " + "; ".join(ambiguous)
-        return None, f"Element target could not be resolved by any strategy: {target.model_dump()}"
+            return None, "Target matches multiple visible elements; refusing ambiguous action: " + "; ".join(ambiguous), None
+
+        return None, f"No target candidate could be resolved from: {[c.strategy for c in sorted_candidates]}", None
+
+    @classmethod
+    async def resolve(cls, page: Page, target: TargetDescriptor) -> Tuple[Optional[Locator], Optional[str]]:
+        if not target:
+            return None, "No target descriptor provided"
+        candidates = target.get_ranked_candidates()
+        locator, err, winning = await cls.resolve_candidates(page, candidates, target.context)
+        return locator, err

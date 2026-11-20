@@ -100,23 +100,61 @@ async def _probe_ollama() -> dict[str, Any]:
     host = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
     parsed = urlsplit(host)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        return {"status": "error", "latency_ms": None, "message": "OLLAMA_HOST is not a valid http(s) address."}
+        return {"status": "error", "code": "error", "latency_ms": None, "message": "OLLAMA_HOST is not a valid http(s) address."}
     started = time.perf_counter()
     try:
         async with httpx.AsyncClient(timeout=4) as client:
             response = await client.get(f"{host}/api/tags")
         if response.status_code >= 400:
-            return {"status": "error", "latency_ms": _elapsed(started), "message": f"Ollama returned HTTP {response.status_code}."}
+            return {"status": "error", "code": "error", "latency_ms": _elapsed(started), "message": f"Ollama returned HTTP {response.status_code}."}
         models = response.json().get("models") or []
         names = [item.get("name") for item in models if isinstance(item, dict) and item.get("name")]
+        if not names:
+            return {
+                "status": "success",
+                "code": "connected",
+                "latency_ms": _elapsed(started),
+                "message": "Connected: Ollama is running, but no models are installed. Run 'ollama pull llama3' or 'mistral'.",
+                "models": [],
+            }
         return {
             "status": "success",
+            "code": "connected",
             "latency_ms": _elapsed(started),
-            "message": "Ollama responded." + (f" Models: {', '.join(names[:4])}." if names else " No models are installed."),
+            "message": f"Connected: Ollama is running with {len(names)} installed model(s): {', '.join(names[:4])}.",
             "models": names[:8],
         }
     except Exception as exc:
-        return {"status": "unavailable", "latency_ms": None, "message": "Ollama is not reachable. " + redact_secrets(str(exc))}
+        return {
+            "status": "unavailable",
+            "code": "unreachable",
+            "latency_ms": None,
+            "message": "Ollama is not running. Start Ollama locally with 'ollama serve' to enable local models.",
+        }
+
+
+INTEGRATION_ENV_MAP: dict[str, tuple[str, ...]] = {
+    "integ_gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+    "integ_groq": ("GROQ_API_KEY",),
+    "integ_openrouter": ("OPENROUTER_API_KEY",),
+    "integ_github": ("GITHUB_TOKEN",),
+    "integ_slack": ("SLACK_API_KEY",),
+}
+
+
+def get_credential_metadata(integration_id: str) -> dict[str, Any]:
+    import os
+    stored = get_secret(integration_id)
+    if stored:
+        masked = f"{stored[:4]}••••{stored[-4:]}" if len(stored) > 8 else "••••••••"
+        return {"has_credentials": True, "source": "vault", "masked": masked}
+    env_keys = INTEGRATION_ENV_MAP.get(integration_id, ())
+    for key in env_keys:
+        val = os.getenv(key, "").strip()
+        if val:
+            masked = f"{val[:4]}••••{val[-4:]}" if len(val) > 8 else "••••••••"
+            return {"has_credentials": True, "source": "env", "masked": masked}
+    return {"has_credentials": False, "source": "none", "masked": None}
 
 
 def _provider_key(integration_id: str, env_names: tuple[str, ...]) -> str | None:
@@ -134,7 +172,12 @@ def _provider_key(integration_id: str, env_names: tuple[str, ...]) -> str | None
 async def _probe_bearer_models(integration_id: str, url: str, env_names: tuple[str, ...], query_key: bool = False) -> dict[str, Any]:
     key = _provider_key(integration_id, env_names)
     if not key:
-        return {"status": "not_configured", "latency_ms": None, "message": "No API key is configured for this provider."}
+        return {
+            "status": "not_configured",
+            "code": "not_configured",
+            "latency_ms": None,
+            "message": "No API key is configured for this provider. Add a key in Integrations or set it in .env."
+        }
     started = time.perf_counter()
     headers = {"User-Agent": "WhistleCode"}
     params = None
@@ -146,12 +189,53 @@ async def _probe_bearer_models(integration_id: str, url: str, env_names: tuple[s
         async with httpx.AsyncClient(timeout=8) as client:
             response = await client.get(url, headers=headers, params=params)
         if response.status_code in {401, 403}:
-            return {"status": "error", "latency_ms": _elapsed(started), "message": "The provider rejected the API key."}
+            return {
+                "status": "error",
+                "code": "invalid_key",
+                "latency_ms": _elapsed(started),
+                "message": "Invalid key: The provider rejected the API key. Please check and re-enter your key."
+            }
+        if response.status_code == 429:
+            return {
+                "status": "error",
+                "code": "rate_limited",
+                "latency_ms": _elapsed(started),
+                "message": "Rate limited: Provider quota exceeded or rate limit reached. Please check your account quota."
+            }
+        if response.status_code == 404:
+            return {
+                "status": "error",
+                "code": "model_not_found",
+                "latency_ms": _elapsed(started),
+                "message": "Model not found: The configured model or endpoint could not be resolved."
+            }
         if response.status_code >= 400:
-            return {"status": "error", "latency_ms": _elapsed(started), "message": f"The provider returned HTTP {response.status_code}."}
-        return {"status": "success", "latency_ms": _elapsed(started), "message": "Provider accepted the key and returned a model list."}
+            return {
+                "status": "error",
+                "code": "error",
+                "latency_ms": _elapsed(started),
+                "message": f"Provider error: Returned HTTP {response.status_code}."
+            }
+        return {
+            "status": "success",
+            "code": "connected",
+            "latency_ms": _elapsed(started),
+            "message": "Connected: Provider accepted the key and returned a valid model list."
+        }
+    except (httpx.ConnectError, httpx.TimeoutException) as exc:
+        return {
+            "status": "unavailable",
+            "code": "unreachable",
+            "latency_ms": None,
+            "message": f"Unreachable: Could not reach the provider endpoint ({exc.__class__.__name__})."
+        }
     except Exception as exc:
-        return {"status": "unavailable", "latency_ms": None, "message": redact_secrets(str(exc))}
+        return {
+            "status": "unavailable",
+            "code": "unreachable",
+            "latency_ms": None,
+            "message": f"Connection failed: {redact_secrets(str(exc))}"
+        }
 
 
 async def _probe_github() -> dict[str, Any]:
@@ -160,7 +244,12 @@ async def _probe_github() -> dict[str, Any]:
         import os
         token = os.getenv("GITHUB_TOKEN", "").strip() or None
     if not token:
-        return {"status": "not_configured", "latency_ms": None, "message": "No GitHub token is stored. GitHub was not called."}
+        return {
+            "status": "not_configured",
+            "code": "not_configured",
+            "latency_ms": None,
+            "message": "No GitHub token is configured. Add a token in Integrations or set GITHUB_TOKEN in .env."
+        }
     started = time.perf_counter()
     try:
         async with httpx.AsyncClient(timeout=8) as client:
@@ -173,13 +262,52 @@ async def _probe_github() -> dict[str, Any]:
                 },
             )
         if response.status_code in {401, 403}:
-            return {"status": "error", "latency_ms": _elapsed(started), "message": "GitHub rejected the token."}
+            return {
+                "status": "error",
+                "code": "invalid_key",
+                "latency_ms": _elapsed(started),
+                "message": "Invalid key: GitHub rejected the personal access token. Please verify token permissions."
+            }
+        if response.status_code == 429:
+            return {
+                "status": "error",
+                "code": "rate_limited",
+                "latency_ms": _elapsed(started),
+                "message": "Rate limited: GitHub API rate limit reached."
+            }
         if response.status_code >= 400:
-            return {"status": "error", "latency_ms": _elapsed(started), "message": f"GitHub returned HTTP {response.status_code}."}
+            return {
+                "status": "error",
+                "code": "error",
+                "latency_ms": _elapsed(started),
+                "message": f"GitHub returned HTTP {response.status_code}."
+            }
         login = response.json().get("login") or "the authenticated user"
-        return {"status": "success", "latency_ms": _elapsed(started), "message": f"GitHub authenticated as {login}."}
+        raw_scopes = response.headers.get("x-oauth-scopes", "").strip()
+        scopes = [s.strip() for s in raw_scopes.split(",") if s.strip()]
+        scope_text = f" Scopes: {', '.join(scopes)}." if scopes else " No special scopes (public data only)."
+        return {
+            "status": "success",
+            "code": "connected",
+            "latency_ms": _elapsed(started),
+            "message": f"Connected: GitHub authenticated as @{login}.{scope_text}",
+            "scopes": scopes,
+            "login": login,
+        }
+    except (httpx.ConnectError, httpx.TimeoutException) as exc:
+        return {
+            "status": "unavailable",
+            "code": "unreachable",
+            "latency_ms": None,
+            "message": f"Unreachable: Could not reach GitHub API ({exc.__class__.__name__})."
+        }
     except Exception as exc:
-        return {"status": "unavailable", "latency_ms": None, "message": redact_secrets(str(exc))}
+        return {
+            "status": "unavailable",
+            "code": "unreachable",
+            "latency_ms": None,
+            "message": redact_secrets(str(exc))
+        }
 
 
 def local_availability(integration_id: str) -> tuple[str, str]:
@@ -193,6 +321,9 @@ def local_availability(integration_id: str) -> tuple[str, str]:
         return "local_service", "Status is confirmed only by a live request to Ollama."
     if integration_id == "integ_mcp_servers":
         return "untrusted", "MCP servers stay disabled until each tool is approved."
-    if has_secret(integration_id):
-        return "credential_stored", "A server-side credential is stored. Run Test to verify it."
+    meta = get_credential_metadata(integration_id)
+    if meta["has_credentials"]:
+        if meta["source"] == "vault":
+            return "credential_stored", "Stored in server-side vault (overrides .env). Run Test to verify."
+        return "env_configured", "Inherited from .env variable. Run Test to verify."
     return "not_configured", "No credential is stored, so this connector is not connected."

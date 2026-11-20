@@ -11,7 +11,7 @@ export const SandboxViewer: React.FC = () => {
           </p>
         </div>
         <a
-          href="http://localhost:8000/testsite"
+          href="/testsite"
           target="_blank"
           rel="noopener noreferrer"
           className="btn btn-secondary btn-sm"
@@ -22,7 +22,7 @@ export const SandboxViewer: React.FC = () => {
 
       <div className="sandbox-frame-wrapper">
         <iframe
-          src="http://localhost:8000/testsite"
+          src="/testsite"
           title="WhistleCode Benchmark Test Site"
           className="sandbox-iframe"
         />

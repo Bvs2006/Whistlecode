@@ -18,7 +18,7 @@ export interface SkillDefinition {
   updated_at: string;
 }
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
 export async function fetchSkills(category?: string): Promise<SkillDefinition[]> {
   const url = category ? `${API_BASE}/api/skills?category=${category}` : `${API_BASE}/api/skills`;

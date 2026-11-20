@@ -7,13 +7,25 @@ import secrets
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 from pydantic import BaseModel, Field
+from .workflow import AllowedScope
 
 
 class ApprovalScope(BaseModel):
-    allowed_origins: List[str]
-    allowed_action_types: List[str]
+    allowed_origins: List[str] = Field(default_factory=list)
+    allowed_scope: Optional[AllowedScope] = None
+    allowed_action_types: List[str] = Field(default_factory=list)
     parameter_constraints: Dict[str, Any] = Field(default_factory=dict)
     max_risk_level: str = "high"
+
+    def get_effective_scope(self) -> AllowedScope:
+        if self.allowed_scope:
+            domains = list(dict.fromkeys(self.allowed_scope.domains + (self.allowed_origins or [])))
+            return AllowedScope(
+                domains=domains,
+                apps=self.allowed_scope.apps,
+                folders=self.allowed_scope.folders
+            )
+        return AllowedScope(domains=self.allowed_origins or [])
 
 
 class ApprovalRecord(BaseModel):
@@ -49,12 +61,15 @@ class ApprovalRecord(BaseModel):
         return key
 
     def signed_payload(self) -> bytes:
+        scope_data = self.scope.model_dump(mode="json")
+        if scope_data.get("allowed_scope") is None:
+            scope_data.pop("allowed_scope", None)
         payload = {
             "id": self.id,
             "workflow_id": self.workflow_id,
             "version": self.version,
             "version_hash": self.version_hash,
-            "scope": self.scope.model_dump(mode="json"),
+            "scope": scope_data,
             "approver": self.approver,
             "created_at": self.created_at,
             "expires_at": self.expires_at,

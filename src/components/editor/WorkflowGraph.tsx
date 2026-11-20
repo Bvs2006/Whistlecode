@@ -126,6 +126,9 @@ export const WorkflowGraph: React.FC<Props> = ({
                       <span className="node-step-badge">{idx + 1}</span>
                       <span className="node-action-icon">{getActionIcon(step.action)}</span>
                       <span className="node-action-type">{step.action.toUpperCase()}</span>
+                      <span className={`node-surface-badge surface-${step.surface || "browser"}`}>
+                        {(step.surface || "browser") === "browser" ? "🌐" : (step.surface || "browser") === "desktop" ? "🖥️" : "📁"} {step.surface || "browser"}
+                      </span>
                       <span className={`badge-risk badge-risk-${step.risk}`}>
                         {step.risk}
                       </span>
@@ -138,6 +141,11 @@ export const WorkflowGraph: React.FC<Props> = ({
                     {step.target && (
                       <div className="node-target">
                         🎯 {step.target.name || step.target.test_id || step.target.role || "Target"}
+                        {step.target_candidates && step.target_candidates.length > 0 && (
+                          <span className="node-candidate-count" title={`${step.target_candidates.length} ranked fallback target strategies`}>
+                            {" "}· {step.target_candidates.length} fallbacks
+                          </span>
+                        )}
                       </div>
                     )}
 
@@ -219,6 +227,18 @@ export const WorkflowGraph: React.FC<Props> = ({
               </div>
 
               <div className="form-group">
+                <label>Execution Surface</label>
+                <select
+                  value={selectedStep.surface || "browser"}
+                  onChange={(e) => handleUpdateSelected({ surface: e.target.value as "browser" | "desktop" | "file" })}
+                >
+                  <option value="browser">🌐 Browser (Web Automation)</option>
+                  <option value="desktop">🖥️ Desktop (OS & Window Native)</option>
+                  <option value="file">📁 File (Local Workspace I/O)</option>
+                </select>
+              </div>
+
+              <div className="form-group">
                 <label>Action Type</label>
                 <select
                   value={selectedStep.action}
@@ -270,6 +290,18 @@ export const WorkflowGraph: React.FC<Props> = ({
                     });
                   }}
                 />
+                {selectedStep.target_candidates && selectedStep.target_candidates.length > 0 && (
+                  <div style={{ marginTop: "6px", display: "grid", gap: "4px" }}>
+                    <small style={{ color: "var(--wc-muted)", fontSize: "10px", fontWeight: 600 }}>
+                      Ranked Fallback Targets ({selectedStep.target_candidates.length}):
+                    </small>
+                    {selectedStep.target_candidates.map((c, cIdx) => (
+                      <div key={cIdx} style={{ fontSize: "10px", padding: "3px 6px", background: "rgba(255,255,255,0.04)", borderRadius: "4px", border: "1px solid var(--wc-line)" }}>
+                        #{cIdx + 1} <code>{c.strategy}</code>: {typeof c.value === "string" ? c.value : JSON.stringify(c.value)}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="form-group">

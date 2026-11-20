@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime
 import html
 import io
+import json
 import os
 import uuid
 import zipfile
@@ -182,7 +183,7 @@ def _pdf_bytes(lines: list[str]) -> bytes:
     
     y = 700
     for line in content_lines:
-        safe_line = line.replace("(", "\(").replace(")", "\)")[:90]
+        safe_line = line.replace("(", r"\(").replace(")", r"\)")[:90]
         stream_content += f"BT /F2 11 Tf 60 {y} Td (* {safe_line}) Tj ET\n"
         y -= 22
         if y < 60:
@@ -218,15 +219,19 @@ def _pdf_bytes(lines: list[str]) -> bytes:
     return body + xref.encode("ascii") + trailer.encode("ascii")
 
 
-def analyze_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
+def analyze_rows(rows: list[Any]) -> dict[str, Any]:
     if not rows:
-        return {"rows_count": 0, "columns": [], "totals": {}}
-    df = pd.DataFrame(rows)
+        return {"row_count": 0, "rows_count": 0, "columns": [], "totals": {}}
+    if isinstance(rows[0], (list, tuple)) and len(rows) > 1:
+        df = pd.DataFrame(rows[1:], columns=rows[0])
+    else:
+        df = pd.DataFrame(rows)
     totals: dict[str, float] = {}
     for col in df.columns:
         if pd.api.types.is_numeric_dtype(df[col]):
             totals[str(col)] = float(df[col].sum())
     return {
+        "row_count": len(df),
         "rows_count": len(df),
         "columns": list(df.columns),
         "totals": totals,
@@ -252,8 +257,13 @@ def generate_document(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
     elif kind == "pdf":
         raw_bytes = _pdf_bytes(lines)
     elif kind in {"xlsx", "csv"}:
-        rows = payload.get("rows") or [{"topic": lines[0], "notes": bullet} for bullet in lines[1:]]
-        df = pd.DataFrame(rows)
+        rows = payload.get("rows")
+        if isinstance(rows, list) and rows and isinstance(rows[0], (list, tuple)) and len(rows) > 1:
+            df = pd.DataFrame(rows[1:], columns=rows[0])
+        elif isinstance(rows, list):
+            df = pd.DataFrame(rows)
+        else:
+            df = pd.DataFrame([{"topic": lines[0], "notes": bullet} for bullet in lines[1:]])
         buffer = io.BytesIO()
         if kind == "csv":
             df.to_csv(buffer, index=False)
@@ -281,21 +291,21 @@ def generate_document(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
                 id TEXT PRIMARY KEY,
                 kind TEXT NOT NULL,
                 filename TEXT NOT NULL,
-                file_path TEXT NOT NULL,
-                size_bytes INTEGER NOT NULL,
-                topic TEXT,
+                path TEXT NOT NULL,
+                byte_size INTEGER NOT NULL,
                 created_at TEXT NOT NULL
             )
         """)
         conn.execute("""
-            INSERT INTO artifacts (id, kind, filename, file_path, size_bytes, topic, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-        """, (artifact_id, kind, filename, str(target_path), len(raw_bytes), lines[0]))
+            INSERT INTO artifacts (id, kind, filename, path, byte_size, created_at)
+            VALUES (?, ?, ?, ?, ?, datetime('now'))
+        """, (artifact_id, kind, filename, str(target_path), len(raw_bytes)))
         conn.commit()
     finally:
         conn.close()
 
     return {
+        "id": artifact_id,
         "artifact_id": artifact_id,
         "kind": kind,
         "filename": filename,
@@ -320,15 +330,17 @@ def get_artifact(artifact_id: str) -> dict[str, Any] | None:
                     "path": str(f),
                 }
             return None
-        file_path = Path(row["file_path"])
+        raw_path = row["path"] if "path" in row.keys() else row["file_path"]
+        file_path = Path(raw_path)
         if not file_path.exists():
             return None
+        byte_size = row["byte_size"] if "byte_size" in row.keys() else row.get("size_bytes", 0)
         return {
             "id": row["id"],
             "kind": row["kind"],
             "filename": row["filename"],
             "path": str(file_path),
-            "size_bytes": row["size_bytes"],
+            "size_bytes": byte_size,
         }
     except Exception:
         return None

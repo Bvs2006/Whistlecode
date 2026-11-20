@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import {
   fetchIntegrations,
   connectIntegration,
+  startIntegrationOAuth,
   disconnectIntegration,
   testIntegration,
   executeTool,
@@ -44,8 +45,11 @@ export const IntegrationHubView: React.FC = () => {
   const [docKind, setDocKind] = useState<"docx" | "pptx" | "pdf">("docx");
   const [docBusy, setDocBusy] = useState(false);
   const [downloadPath, setDownloadPath] = useState<string | null>(null);
+  const [integrationSearch, setIntegrationSearch] = useState("");
+  const [integrationFilter, setIntegrationFilter] = useState<"all" | "connected" | "available">("all");
 
-  const secretIntegrations = new Set(["integ_gemini", "integ_groq", "integ_grok", "integ_openrouter", "integ_github", "integ_slack"]);
+  const secretIntegrations = new Set(["integ_gemini", "integ_groq", "integ_grok", "integ_openrouter"]);
+  const oauthIntegrations = new Set(["integ_gmail", "integ_gdrive", "integ_gcalendar", "integ_github", "integ_slack", "integ_microsoft"]);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -65,11 +69,19 @@ export const IntegrationHubView: React.FC = () => {
 
   useEffect(() => {
     loadData();
+    const handleOAuthComplete = () => { void loadData(); };
+    window.addEventListener("message", handleOAuthComplete);
+    return () => window.removeEventListener("message", handleOAuthComplete);
   }, []);
 
   const handleConnect = async (integ: IntegrationDefinition) => {
     setNotice(null);
     try {
+      if (oauthIntegrations.has(integ.id)) {
+        const authorizationUrl = await startIntegrationOAuth(integ.id);
+        window.location.assign(authorizationUrl);
+        return;
+      }
       const updated = await connectIntegration(integ.id, apiKey.trim() ? { api_key: apiKey.trim() } : undefined);
       setApiKey("");
       setIntegrations((prev) => prev.map((i) => (i.id === integ.id ? updated : i)));
@@ -166,6 +178,15 @@ export const IntegrationHubView: React.FC = () => {
   };
 
   const filesystemReady = integrations.some((item) => item.id === "integ_local_desktop" && item.status === "connected");
+  const filteredIntegrations = integrations.filter((integ) => {
+    const matchesSearch = `${integ.name} ${integ.description} ${integ.category}`.toLowerCase().includes(integrationSearch.trim().toLowerCase());
+    const matchesFilter =
+      integrationFilter === "all" ||
+      (integrationFilter === "connected" && integ.status === "connected") ||
+      (integrationFilter === "available" && integ.status !== "connected");
+    return matchesSearch && matchesFilter;
+  });
+  const connectedCount = integrations.filter((integ) => integ.status === "connected").length;
 
   const handleGenerate = async () => {
     setNotice(null);
@@ -190,93 +211,105 @@ export const IntegrationHubView: React.FC = () => {
   };
 
   return (
-    <div className="feature-page integration-page h-full flex flex-col overflow-y-auto">
+    <div className="feature-page integration-page">
       {/* Header */}
-      <div className="border-b border-slate-800 bg-slate-900/60 px-8 py-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/30 text-purple-400">
-              <Plug className="w-6 h-6" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-                Integration Hub & MCP Client
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-medium border border-purple-500/30">
-                  Secure Sandboxed Connectors
-                </span>
-              </h1>
-              <p className="text-sm text-slate-400 mt-1">
-                Connect external enterprise services, local desktop capabilities, and Model Context Protocol (MCP) servers with strict permission boundaries.
-              </p>
+      <header className="integration-page-header">
+        <div className="integration-heading">
+          <div className="integration-heading-icon"><Plug /></div>
+          <div>
+            <span className="integration-eyebrow">CONNECTIONS</span>
+            <h1>Integration Hub</h1>
+            <p>Manage providers, secure credentials, and connected tools.</p>
+          </div>
+        </div>
+        <div className="integration-header-actions">
+          <div className="integration-health-summary">
+            <span className={connectedCount ? "live" : ""}>{connectedCount}</span>
+            <small>connected</small>
+          </div>
+          <button type="button" onClick={loadData} disabled={isLoading} className="integration-refresh">
+            <RefreshCw className={isLoading ? "is-spinning" : ""} />
+            <span>{isLoading ? "Checking" : "Refresh"}</span>
+          </button>
+        </div>
+      </header>
+
+      {/* Main Content (2 Columns) */}
+      <div className="integration-layout">
+        {/* Left Column: Integration Cards */}
+        <section className="integration-catalog-list" aria-label="Available integrations">
+          <div className="integration-list-toolbar">
+            <label className="integration-search-field">
+              <span aria-hidden="true">⌕</span>
+              <input
+                value={integrationSearch}
+                onChange={(event) => setIntegrationSearch(event.target.value)}
+                placeholder="Search integrations"
+                aria-label="Search integrations"
+              />
+            </label>
+            <div className="integration-filter-tabs" role="group" aria-label="Filter integrations">
+              {([
+                ["all", "All"],
+                ["connected", "Connected"],
+                ["available", "Available"],
+              ] as const).map(([value, label]) => (
+                <button type="button" key={value} className={integrationFilter === value ? "active" : ""} onClick={() => setIntegrationFilter(value)} aria-pressed={integrationFilter === value}>
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
 
-          <button
-            onClick={loadData}
-            disabled={isLoading}
-            className="flex items-center gap-2 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-xs font-semibold text-slate-300 transition-colors self-start md:self-auto"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
-            Refresh Status
-          </button>
-        </div>
-      </div>
-
-      {/* Main Content (2 Columns) */}
-      <div className="p-8 max-w-7xl mx-auto w-full flex-1 grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Left Column: Integration Cards */}
-        <div className="lg:col-span-7 space-y-4">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-            <Plug className="w-4 h-4 text-purple-400" />
-            Connected & Available Services ({integrations.length})
-          </h2>
-
-          <div className="space-y-3">
-            {integrations.map((integ) => {
+          <div className="integration-card-list">
+            {filteredIntegrations.map((integ) => {
               const isSelected = selectedInteg?.id === integ.id;
               const isConnected = integ.status === "connected";
 
               return (
-                <div
+                <button
                   key={integ.id}
+                  type="button"
                   onClick={() => setSelectedInteg(integ)}
-                  className={`p-4 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-4 ${
-                    isSelected
-                      ? "bg-purple-950/20 border-purple-500/50 shadow-lg shadow-purple-950/40"
-                      : "bg-slate-900/80 border-slate-800 hover:border-slate-700 hover:bg-slate-900"
-                  }`}
+                  className={`integration-catalog-card ${isSelected ? "selected" : ""}`}
+                  aria-pressed={isSelected}
                 >
-                  <div className="flex items-center gap-3.5">
-                    <div className="p-2.5 rounded-lg bg-slate-800 border border-slate-700/60">
+                  <div className="integration-catalog-card-main">
+                    <div className="integration-app-avatar">
                       {getIcon(integ.icon)}
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-semibold text-sm text-white">{integ.name}</h3>
+                    <div className="integration-catalog-copy">
+                      <div className="integration-card-title-row">
+                        <h3>{integ.name}</h3>
                         {integ.is_mcp && (
-                          <span className="text-[10px] px-2 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 font-mono font-semibold">
-                            MCP Protocol
-                          </span>
+                          <span className="integration-mcp-label">MCP</span>
                         )}
                       </div>
-                      <p className="text-xs text-slate-400 line-clamp-1 mt-0.5">{integ.description}</p>
+                      <p>{integ.description}</p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3 shrink-0">
+                  <div className="integration-card-status">
                     {statusBadge(integ)}
-                    <ChevronRight className={`w-4 h-4 transition-transform ${isSelected ? "text-purple-400 translate-x-0.5" : "text-slate-600"}`} />
+                    <ChevronRight className="integration-chevron" />
                   </div>
-                </div>
+                </button>
               );
             })}
+            {!filteredIntegrations.length && (
+              <div className="integration-empty-state">
+                <span>⌕</span>
+                <strong>No integrations found</strong>
+                <p>Try another search or connection filter.</p>
+              </div>
+            )}
           </div>
-        </div>
+        </section>
 
         {/* Right Column: Integration Inspector & Configuration */}
-        <div className="lg:col-span-5">
+        <aside className="integration-inspector-column">
           {selectedInteg ? (
-            <div className="sticky top-6 bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
+            <div className="integration-inspector">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <div className="p-3 rounded-xl bg-slate-800 border border-slate-700">
@@ -304,7 +337,7 @@ export const IntegrationHubView: React.FC = () => {
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-semibold transition-colors shadow-lg shadow-purple-600/30"
                   >
                     <Plug className="w-3.5 h-3.5" />
-                    Connect Service
+                    {oauthIntegrations.has(selectedInteg.id) ? "Sign in to connect" : "Connect Service"}
                   </button>
                 )}
               </div>
@@ -314,17 +347,54 @@ export const IntegrationHubView: React.FC = () => {
                 <p className="text-xs text-slate-400">{selectedInteg.status_detail}</p>
               )}
               {secretIntegrations.has(selectedInteg.id) && (
-                <label className="block space-y-1.5">
-                  <span className="text-xs font-semibold text-slate-300">API token</span>
-                  <input
-                    type="password"
-                    autoComplete="off"
-                    value={apiKey}
-                    onChange={(event) => setApiKey(event.target.value)}
-                    placeholder={selectedInteg.has_credentials ? "A token is already stored. Enter a new one only to replace it." : "Paste the token. It stays on the server."}
-                    className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-purple-400"
-                  />
-                </label>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-300">API Key / Token</span>
+                    {selectedInteg.credential_source && (
+                      <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                        selectedInteg.credential_source === "vault"
+                          ? "bg-purple-900/60 text-purple-300 border border-purple-700/50"
+                          : "bg-slate-800 text-slate-400 border border-slate-700"
+                      }`}>
+                        {selectedInteg.credential_source === "vault"
+                          ? "Vault (Overrides .env)"
+                          : "From .env"}
+                      </span>
+                    )}
+                  </div>
+                  {selectedInteg.has_credentials && (
+                    <div className="flex items-center justify-between p-2 rounded bg-slate-900/80 border border-slate-800 text-xs">
+                      <span className="font-mono text-slate-400">
+                        {selectedInteg.masked_credential || "••••••••"}
+                      </span>
+                      {selectedInteg.credential_source === "vault" && (
+                        <button
+                          type="button"
+                          onClick={() => handleDisconnect(selectedInteg)}
+                          className="text-[11px] text-rose-400 hover:text-rose-300 underline"
+                        >
+                          Remove Vault Key
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  <label className="block space-y-1">
+                    <span className="text-[11px] text-slate-400">
+                      {selectedInteg.has_credentials ? "Enter new token to replace existing:" : "Enter API token (stored securely on server):"}
+                    </span>
+                    <input
+                      type="password"
+                      autoComplete="off"
+                      value={apiKey}
+                      onChange={(event) => setApiKey(event.target.value)}
+                      placeholder={selectedInteg.has_credentials ? "Paste new key to override..." : "Paste API key..."}
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-purple-400 font-mono"
+                    />
+                  </label>
+                  <p className="text-[10px] text-slate-500">
+                    Rule: UI Vault keys override .env file keys. Secrets are encrypted and never returned to the frontend.
+                  </p>
+                </div>
               )}
 
               {/* Ping Connection Test */}
@@ -332,7 +402,7 @@ export const IntegrationHubView: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
                     <Activity className="w-3.5 h-3.5 text-purple-400" />
-                    Health & Latency Verification
+                    Health & Live Connection Verification
                   </span>
                   <button
                     onClick={() => handleTest(selectedInteg)}
@@ -344,13 +414,39 @@ export const IntegrationHubView: React.FC = () => {
                 </div>
 
                 {testResult && testResult.integration_id === selectedInteg.id && (
-                  <div className={`p-2.5 rounded text-xs flex items-start justify-between gap-3 ${
+                  <div className={`p-2.5 rounded text-xs flex flex-col gap-1.5 ${
                     testResult.status === "success"
                       ? "bg-emerald-950/40 border border-emerald-800/40 text-emerald-300"
-                      : "bg-amber-950/40 border border-amber-800/40 text-amber-200"
+                      : "bg-rose-950/40 border border-rose-800/40 text-rose-200"
                   }`}>
-                    <span>{testResult.message}{typeof testResult.latency_ms === "number" ? ` (${testResult.latency_ms} ms)` : ""}</span>
-                    {testResult.status === "success" ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <AlertTriangle className="w-4 h-4" />}
+                    <div className="flex items-start justify-between gap-3">
+                      <span>{testResult.message}{typeof testResult.latency_ms === "number" ? ` (${testResult.latency_ms} ms)` : ""}</span>
+                      {testResult.status === "success" ? <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
+                    </div>
+                    {testResult.scopes && testResult.scopes.length > 0 && (
+                      <div className="text-[11px] text-slate-300 flex items-center gap-1 mt-1">
+                        <span className="font-semibold">Token Scopes:</span>
+                        <div className="flex flex-wrap gap-1">
+                          {testResult.scopes.map((scope: string) => (
+                            <span key={scope} className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-[10px] font-mono text-purple-300">
+                              {scope}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {testResult.models && testResult.models.length > 0 && (
+                      <div className="text-[11px] text-slate-300 flex items-center gap-1 mt-1">
+                        <span className="font-semibold">Detected Models:</span>
+                        <div className="flex flex-wrap gap-1">
+                          {testResult.models.map((m: string) => (
+                            <span key={m} className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-[10px] font-mono text-slate-300">
+                              {m}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -399,16 +495,22 @@ export const IntegrationHubView: React.FC = () => {
               Select an integration to inspect tools and configuration.
             </div>
           )}
-        </div>
+        </aside>
       </div>
 
-      <section className="mx-auto mb-10 w-full max-w-7xl px-8">
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
-          <h2 className="text-sm font-semibold text-white">Local document tools</h2>
-          <p className="mt-1 text-xs text-slate-400">
+      <section className="integration-document-section">
+        <div className="integration-document-card">
+          <div className="integration-document-heading">
+            <div>
+              <span className="integration-eyebrow">LOCAL FILES</span>
+              <h2>Document tools</h2>
+            </div>
+            <span className={filesystemReady ? "integration-local-ready" : "integration-local-disabled"}>{filesystemReady ? "Desktop connected" : "Desktop not connected"}</span>
+          </div>
+          <p>
             Creates a real DOCX, PPTX, or PDF from the text you enter. Connect Local Desktop & Filesystem first. The file is written only inside the artifact folder.
           </p>
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <div className="integration-document-grid">
             <input
               value={docTopic}
               onChange={(event) => setDocTopic(event.target.value)}
@@ -431,7 +533,7 @@ export const IntegrationHubView: React.FC = () => {
               className="min-h-24 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-purple-400 md:col-span-2"
             />
           </div>
-          <div className="mt-4 flex flex-wrap items-center gap-3">
+          <div className="integration-document-actions">
             <button
               type="button"
               onClick={handleGenerate}

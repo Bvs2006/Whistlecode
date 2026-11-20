@@ -30,7 +30,7 @@ export interface AutomationDefinition {
   updated_at: string;
 }
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
 export async function fetchAutomations(status?: string): Promise<AutomationDefinition[]> {
   const url = status ? `${API_BASE}/api/automations?status=${status}` : `${API_BASE}/api/automations`;

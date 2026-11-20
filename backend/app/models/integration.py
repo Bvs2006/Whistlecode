@@ -32,6 +32,8 @@ class IntegrationDefinition(BaseModel):
     required_permissions: List[str] = Field(default_factory=list)
     config_schema: Dict[str, Any] = Field(default_factory=dict)
     has_credentials: bool = False
+    masked_credential: Optional[str] = None
+    credential_source: Optional[str] = None  # "vault", "env", "none"
     availability: str = "unknown"
     status_detail: str = ""
     last_tested_at: Optional[str] = None

@@ -2,7 +2,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
-from .workflow import ActionType, RiskLevel
+from .workflow import ActionType, RiskLevel, AllowedScope
 
 
 class PolicyDecision(str, Enum):
@@ -46,5 +46,16 @@ class PolicyConfig(BaseModel):
     policy_version: str = "0.1.0"
     default_decision: PolicyDecision = PolicyDecision.DENY
     allowed_origins: List[str] = Field(default_factory=list)
+    allowed_apps: List[str] = Field(default_factory=list)
+    allowed_folders: List[str] = Field(default_factory=list)
+    allowed_scope: Optional[AllowedScope] = None
     actions: Dict[str, ActionPolicyRule] = Field(default_factory=dict)
     limits: PolicyLimits = Field(default_factory=PolicyLimits)
+
+    def get_effective_scope(self) -> AllowedScope:
+        if self.allowed_scope:
+            domains = list(dict.fromkeys(self.allowed_scope.domains + (self.allowed_origins or [])))
+            apps = list(dict.fromkeys(self.allowed_scope.apps + (self.allowed_apps or [])))
+            folders = list(dict.fromkeys(self.allowed_scope.folders + (self.allowed_folders or [])))
+            return AllowedScope(domains=domains, apps=apps, folders=folders)
+        return AllowedScope(domains=self.allowed_origins or [], apps=self.allowed_apps or [], folders=self.allowed_folders or [])

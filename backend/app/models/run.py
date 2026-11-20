@@ -29,6 +29,8 @@ class StepExecutionResult(BaseModel):
     step_id: str
     action: str
     target_summary: Optional[str] = None
+    matched_target_strategy: Optional[str] = None
+    matched_target_value: Optional[Any] = None
     decision: PolicyDecision
     reason_code: ReasonCode
     passed: bool
@@ -51,5 +53,6 @@ class RunRecord(BaseModel):
     started_at: str
     ended_at: Optional[str] = None
     step_results: List[StepExecutionResult] = Field(default_factory=list)
+    verification_checklist: List[Dict[str, Any]] = Field(default_factory=list)
     current_step_index: int = 0
     safe_stop_reason: Optional[str] = None
