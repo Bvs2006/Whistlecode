@@ -15,18 +15,6 @@ const integrations = [
   { icon: "✉", name: "Gmail & Calendar", status: "Connector coming soon", detail: "Dedicated account connections are planned. They are not active in this workspace yet.", state: "planned" },
   { icon: "▣", name: "Desktop", status: "Coming soon", detail: "Desktop recording is on the roadmap; browser-based recording is available today.", state: "planned" },
 ];
-const signalPaths = [
-  "M 490 -8 V 142 C 490 252 404 316 22 366",
-  "M 548 -8 V 177 C 548 273 484 320 174 366",
-  "M 602 -8 V 205 C 602 292 556 330 328 366",
-  "M 657 -8 V 226 C 657 300 646 338 574 366",
-  "M 720 -8 V 366",
-  "M 783 -8 V 226 C 783 300 794 338 866 366",
-  "M 838 -8 V 205 C 838 292 884 330 1112 366",
-  "M 892 -8 V 177 C 892 273 956 320 1266 366",
-  "M 950 -8 V 142 C 950 252 1036 316 1418 366",
-];
-
 export function LandingPage({ onLaunch }: LandingPageProps) {
   const [prompt, setPrompt] = useState("");
   useEffect(() => {
@@ -54,55 +42,44 @@ export function LandingPage({ onLaunch }: LandingPageProps) {
     onLaunch(prompt.trim());
   };
   return (
-    <div className="landing-page">
-      <header className="landing-nav">
+    <div className="landing-page landing-v0-layout">
+      <aside className="landing-sidebar" aria-label="WhistleCode navigation">
         <a className="brand-lockup" href="#top" aria-label="WhistleCode home"><img src="/whistlecode-mark.svg" alt="" /><span>whistle<span>code</span></span></a>
-        <nav aria-label="Main navigation" className="landing-links"><a href="#product">Product</a><a href="#integrations">Integrations</a><a href="#how-it-works">How it works</a><a href="#trust">Trust</a></nav>
-        <button className="nav-cta" onClick={() => onLaunch()}>Open workspace <span>↗</span></button>
-      </header>
+        <button className="landing-sidebar-new" type="button" onClick={() => onLaunch()}>New chat <span className="landing-chevron" aria-hidden="true" /></button>
+        <nav aria-label="Explore WhistleCode" className="landing-sidebar-nav">
+          <span className="landing-sidebar-label">EXPLORE</span>
+          <a href="#product"><span aria-hidden="true"><svg viewBox="0 0 20 20"><rect x="3" y="3" width="5" height="5" rx="1" /><rect x="12" y="3" width="5" height="5" rx="1" /><rect x="3" y="12" width="5" height="5" rx="1" /><rect x="12" y="12" width="5" height="5" rx="1" /></svg></span> Product</a>
+          <a href="#how-it-works"><span aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M6 4h11M6 10h11M6 16h11" /><circle cx="3" cy="4" r=".7" /><circle cx="3" cy="10" r=".7" /><circle cx="3" cy="16" r=".7" /></svg></span> How it works</a>
+          <a href="#integrations"><span aria-hidden="true"><svg viewBox="0 0 20 20"><circle cx="10" cy="4" r="2" /><circle cx="4" cy="15" r="2" /><circle cx="16" cy="15" r="2" /><path d="m9 6-4 7m6-7 4 7M6 15h8" /></svg></span> Integrations</a>
+          <a href="#trust"><span aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M10 2.5 16 5v4.3c0 4.1-2.5 6.7-6 8.2-3.5-1.5-6-4.1-6-8.2V5z" /><path d="m7.5 9.8 1.7 1.7 3.5-3.6" /></svg></span> Trust &amp; control</a>
+        </nav>
+        <div className="landing-sidebar-bottom">
+          <div className="landing-sidebar-note-icon" aria-hidden="true">✓</div>
+          <div><strong>You stay in control</strong><span>Review actions before workflows run.</span></div>
+        </div>
+      </aside>
 
-      <main id="top">
-        <section className="landing-hero">
-          <div className="hero-light-curtain" aria-hidden="true">{Array.from({ length: 16 }, (_, index) => <span className={`curtain-column curtain-column-${index % 5}`} key={index} />)}</div>
-          <svg className="signal-field" viewBox="0 0 1440 390" preserveAspectRatio="none" aria-hidden="true">
-            <defs>
-              <filter id="signal-glow" x="-300%" y="-300%" width="700%" height="700%"><feGaussianBlur stdDeviation="3" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
-              <linearGradient id="signal-stroke" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#d7b36a" stopOpacity=".05" /><stop offset=".5" stopColor="#d7b36a" stopOpacity=".3" /><stop offset="1" stopColor="#f0d18a" stopOpacity=".7" /></linearGradient>
-            </defs>
-            {signalPaths.map((path, index) => <g key={path}>
-              <path id={`signal-track-${index}`} className="signal-track" d={path} />
-              <circle className="signal-pulse" r={index % 3 === 0 ? 2.4 : 1.8} filter="url(#signal-glow)">
-                <animateMotion dur={`${4.2 + (index % 4) * 1.1}s`} begin={`${(index % 5) * -0.83}s`} repeatCount="indefinite"><mpath href={`#signal-track-${index}`} /></animateMotion>
-              </circle>
-              {index % 2 === 0 && <circle className="signal-pulse signal-pulse-soft" r="1.35" filter="url(#signal-glow)"><animateMotion dur={`${6.4 + index * 0.24}s`} begin={`${-index * 0.61}s`} repeatCount="indefinite"><mpath href={`#signal-track-${index}`} /></animateMotion></circle>}
-            </g>)}
-          </svg>
-          <div className="hero-copy">
-            <div className="eyebrow"><span className="eyebrow-dot" /> AUTOMATION, WITH YOU IN CONTROL</div>
-            <h1>Make busywork<br /><em>blow away.</em></h1>
-            <p className="hero-description">Teach WhistleCode the tasks you repeat. Build reliable workflows, approve the important steps, and see exactly what happened.</p>
-            <div className="hero-actions"><button className="primary-cta" onClick={() => onLaunch()}>Get started free <span>→</span></button><a className="text-cta" href="#how-it-works">See how it works <span>↗</span></a></div>
-            <div className="hero-proof"><div className="proof-avatars"><span>W</span><span>✓</span><span>·</span></div><span>Human-approved by design</span></div>
-          </div>
-
-          <div className="hero-art" aria-label="Start a conversation with WhistleCode">
-            <div className="orbit orbit-one" /><div className="orbit orbit-two" />
-            <section className="landing-prompt-card" aria-label="Ask WhistleCode">
-              <div className="landing-prompt-top"><span className="landing-prompt-mark"><img src="/whistlecode-mark.svg" alt="" /></span><span><strong>Ask WhistleCode</strong><small>Your workspace starts with a conversation</small></span><i className="landing-live-dot" />
-              </div>
-              <div className="landing-prompt-greeting"><span>WORKSPACE · READY WHEN YOU ARE</span><h2>What can I help you with?</h2><p>Describe a task, ask a question, or start a workflow draft. You’ll review every action before it runs.</p></div>
-              <form className="landing-prompt-form" onSubmit={submitPrompt}>
-                <label className="landing-prompt-sr-only" htmlFor="landing-prompt">Message WhistleCode</label>
-                <textarea id="landing-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Ask anything or describe a task to automate…" rows={3} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
-                <div className="landing-prompt-form-foot"><span>↵ to send · ⇧↵ for a new line</span><button type="submit" aria-label="Start with this prompt">↑</button></div>
-              </form>
-              <div className="landing-prompt-suggestions"><span>TRY ASKING</span><button type="button" onClick={() => setPrompt("Help me plan a task I repeat in my browser")}>Plan a browser task <b>↗</b></button><button type="button" onClick={() => setPrompt("Explain how approvals work before a workflow runs")}>Understand approvals <b>↗</b></button></div>
+      <div className="landing-content">
+        <main id="top">
+          <section className="landing-hero landing-hero-v0">
+            <div className="landing-hero-center">
+              <div className="landing-intro-pill"><img src="/whistlecode-mark.svg" alt="" /> A calmer way to automate</div>
+              <h1>What would you like<br /><span>to get done?</span></h1>
+              <p className="hero-description">Tell WhistleCode about a task you repeat. Turn it into a workflow you can review, approve, and run with confidence.</p>
+              <section className="landing-prompt-card" aria-label="Ask WhistleCode">
+                <form className="landing-prompt-form" onSubmit={submitPrompt}>
+                  <label className="landing-prompt-sr-only" htmlFor="landing-prompt">Describe a task for WhistleCode</label>
+                  <textarea id="landing-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Describe a task you repeat or a workflow you want to create…" rows={3} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
+                  <div className="landing-prompt-form-foot"><span>Press Enter to start · Shift + Enter for a new line</span><button type="submit" aria-label="Start with this prompt">↑</button></div>
+                </form>
+                <div className="landing-prompt-suggestions"><span>GET STARTED</span><button type="button" onClick={() => setPrompt("Help me plan a task I repeat in my browser")}>Plan a browser task <b>↗</b></button><button type="button" onClick={() => setPrompt("Explain how approvals work before a workflow runs")}>Learn about approvals <b>↗</b></button></div>
+              </section>
               <div className="landing-prompt-trust"><span>✓</span> Nothing runs until you review and approve the plan</div>
-            </section>
-          </div>
-        </section>
+              <a className="landing-hero-secondary" href="#how-it-works">See how it works <span aria-hidden="true">↓</span></a>
+            </div>
+          </section>
 
-        <section className="customer-row"><span>DESIGNED AROUND CLEAR, USER-APPROVED AUTOMATION</span><div><b>✓</b> Review every step</div><div><b>◉</b> Keep tasks in scope</div><div><b>⌘</b> Run locally</div><div><b>◈</b> Inspect the activity</div></section>
+          <section className="customer-row"><span>BUILT AROUND YOUR CONTROL</span><div><b>✓</b> Review every step</div><div><b>◉</b> Keep tasks in scope</div><div><b>⌘</b> Work in your browser</div><div><b>◈</b> Inspect the activity</div></section>
 
         <section className="feature-section" id="product">
           <div className="section-intro"><div className="eyebrow"><span className="eyebrow-dot" /> MADE FOR THE WORK YOU REPEAT</div><h2>A routine you<br />can trust.</h2><p>Start with a task you already know. Keep the plan and every decision in view.</p></div>
@@ -159,6 +136,7 @@ export function LandingPage({ onLaunch }: LandingPageProps) {
         <section className="closing-cta"><div className="closing-mark"><img src="/whistlecode-mark.svg" alt="" /></div><div><h2>Ready to clear<br />the busywork?</h2><p>Start with one task. Keep every decision yours.</p><button className="primary-cta" onClick={() => onLaunch()}>Open WhistleCode <span>→</span></button></div></section>
       </main>
       <footer className="landing-footer"><a className="brand-lockup footer-brand" href="#top"><img src="/whistlecode-mark.svg" alt="" /><span>whistle<span>code</span></span></a><span>Thoughtful automation, at your pace.</span><span>© 2026 WhistleCode</span></footer>
+      </div>
     </div>
   );
 }
